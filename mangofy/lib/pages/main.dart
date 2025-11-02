@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:mangofy/home_page.dart';
-import 'package:mangofy/scan_page.dart';
-import 'package:mangofy/gallery_page.dart';
-import 'package:mangofy/dataset_page.dart';
+import 'package:mangofy/pages/home_page.dart';
+import 'package:mangofy/pages/scan/scan_page.dart';
+import 'package:mangofy/pages/gallery/gallery_page.dart';
+import 'package:mangofy/pages/dataset/dataset_page.dart';
 
 void main() {
   runApp(const MyApp());
