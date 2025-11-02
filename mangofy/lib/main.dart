@@ -3,7 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mangofy/home_page.dart';
 import 'package:mangofy/scan_page.dart';
 import 'package:mangofy/gallery_page.dart';
-import 'package:mangofy/database_page.dart';
+import 'package:mangofy/dataset_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -38,7 +38,7 @@ class _MyHomePageState extends State<MyHomePage> {
     HomePage(),
     ScanPage(),
     GalleryPage(),
-    DatabasePage(),
+    DatasetPage(),
   ];
 
   @override
