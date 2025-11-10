@@ -47,13 +47,13 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF555555), 
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Image.asset(
-          'images/logo.png', 
-          height: 150, 
-        ),
-      ),
+      // appBar: AppBar(
+      //   backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      //   title: Image.asset(
+      //     'images/logo.png', 
+      //     height: 150, 
+      //   ),
+      // ),
       body: pages[currentPage],
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFFFAFAFA),
