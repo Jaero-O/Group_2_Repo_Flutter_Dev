@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'scan_details_page.dart'; 
 
 class ScanPage extends StatelessWidget {
   const ScanPage({super.key});
@@ -14,9 +15,9 @@ class ScanPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 10), 
-                    child: const Text(
+                  const Padding(
+                    padding: EdgeInsets.only(left: 10),
+                    child: Text(
                       'Scan History',
                       style: TextStyle(
                         fontSize: 22,
@@ -92,6 +93,9 @@ class ScanPage extends StatelessWidget {
                       child: ListView.builder(
                         itemCount: 20,
                         itemBuilder: (context, index) {
+                          final scanTitle = 'Leaf Scan #${index + 1}';
+                          final disease = 'Anthracnose';
+
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             elevation: 3,
@@ -100,11 +104,20 @@ class ScanPage extends StatelessWidget {
                             ),
                             child: ListTile(
                               leading: const Icon(Icons.image, size: 40),
-                              title: Text('Leaf Scan #${index + 1}'),
-                              subtitle: const Text('Detected: Anthracnose'),
+                              title: Text(scanTitle),
+                              subtitle: Text('Detected: $disease'),
                               trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                               onTap: () {
-                                debugPrint('Leaf Scan #${index + 1} tapped');
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ScanDetailsPage(
+                                      scanTitle: scanTitle,
+                                      disease: disease,
+                                      dateScanned: 'October 29, 2025',
+                                    ),
+                                  ),
+                                );
                               },
                             ),
                           );
