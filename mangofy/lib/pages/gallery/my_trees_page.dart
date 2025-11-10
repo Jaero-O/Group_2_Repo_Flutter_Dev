@@ -1,24 +1,24 @@
-// my_trees_page.dart
 import 'package:flutter/material.dart';
 import 'album_photos_page.dart';
 
 class MyTreesPage extends StatelessWidget {
-  // 💡 NEW: Properties for selection mode
   final bool isSelectionMode;
   final ValueChanged<String>? onAlbumSelected;
 
   const MyTreesPage({
     super.key,
-    this.isSelectionMode = false, // Default to viewing mode
+    this.isSelectionMode = false, 
     this.onAlbumSelected,
   });
 
   @override
   Widget build(BuildContext context) {
     final albums = [
-      {'title': 'Mango Trees', 'cover': 'images/leaf.png'},
-      {'title': 'Banana Grove', 'cover': 'images/leaf.png'},
-      {'title': 'Coconut Field', 'cover': 'images/leaf.png'},
+      {'title': 'Ahsilei Tree', 'location': 'Caloocan City', 'cover_image': 'images/leaf.png'},
+      {'title': 'Kuru Tree', 'location': 'Las Pinas City', 'cover_image': 'images/leaf.png'},
+      {'title': 'Mango Trees', 'location': 'Cavite', 'cover_image': 'images/leaf.png'},
+      {'title': 'Banana Grove', 'location': 'Laguna', 'cover_image': 'images/leaf.png'},
+      {'title': 'Coconut Field', 'location': 'Quezon', 'cover_image': 'images/leaf.png'},
     ];
 
     return GridView.builder(
@@ -27,6 +27,7 @@ class MyTreesPage extends StatelessWidget {
         crossAxisCount: 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
+        childAspectRatio: 0.75,
       ),
       itemCount: albums.length,
       itemBuilder: (context, index) {
@@ -34,10 +35,8 @@ class MyTreesPage extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             if (isSelectionMode && onAlbumSelected != null) {
-              // ✅ SELECTION MODE: Trigger the callback to start photo selection for this album
               onAlbumSelected!(album['title']!);
             } else {
-              // ✅ VIEW MODE (Gallery default): Navigate to the album viewing page
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -47,31 +46,56 @@ class MyTreesPage extends StatelessWidget {
               );
             }
           },
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              image: const DecorationImage(
-                image: AssetImage('assets/sample0.jpg'), 
-                fit: BoxFit.cover,
-              ),
-            ),
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 1.0, 
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(38),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                    image: DecorationImage(
+                      image: AssetImage(album['cover_image']!),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
                 ),
               ),
-              child: Text(
-                album['title']!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
+
+              const SizedBox(height: 8), 
+
+              Padding(
+                padding: const EdgeInsets.only(left: 4.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      album['title']!,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      album['location']!,
+                      style: TextStyle(
+                        color: Colors.black.withAlpha(178),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
         );
       },
