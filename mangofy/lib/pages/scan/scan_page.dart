@@ -7,7 +7,7 @@ class ScanPage extends StatelessWidget {
 
   static const Color topColorStart = Color(0xFF007700);
   static const Color topColorEnd = Color(0xFFC9FF8E);
-  static const double kTopHeaderHeight = 190.0;
+  static const double kTopHeaderHeight = 220.0;
   static const double kTopRadius = 70.0;
   static const double kContainerOverlap = 60.0;
   static const double kCardOverlapHeight = 100.0;
@@ -53,7 +53,7 @@ class ScanPage extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: 16,
+            top: 25,
             left: 16,
             right: 16,
             child: SafeArea(
