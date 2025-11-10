@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'my_trees_page.dart';
 import 'photos_view.dart'; 
 
@@ -18,9 +19,7 @@ class GalleryPage extends StatefulWidget {
   State<GalleryPage> createState() => _GalleryPageState();
 }
 
-
 class _GalleryPageState extends State<GalleryPage> {
-  
   bool isPhotosView = true;
 
   @override
@@ -35,7 +34,6 @@ class _GalleryPageState extends State<GalleryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
@@ -44,14 +42,13 @@ class _GalleryPageState extends State<GalleryPage> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              isPhotosView ? 'Photos' : 'My Trees',
-              style: const TextStyle(
-                fontSize: 22,
+              isPhotosView ? 'Gallery' : 'My Trees',
+              style: GoogleFonts.inter(
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
-                color: Colors.green,
+                color: Colors.black,
               ),
             ),
-            
             GestureDetector(
               onTap: () {
                 setState(() {
@@ -62,7 +59,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 children: [
                   Text(
                     isPhotosView ? 'My Trees' : 'Photos',
-                    style: const TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Colors.green,
@@ -78,11 +75,12 @@ class _GalleryPageState extends State<GalleryPage> {
           ],
         ),
       ),
-
       body: isPhotosView 
-          ? PhotosView(isSelectionMode: widget.isSelectionMode, onSelectionDone: widget.onSelectionDone,) 
+          ? PhotosView(
+              isSelectionMode: widget.isSelectionMode, 
+              onSelectionDone: widget.onSelectionDone,
+            ) 
           : MyTreesPage(isSelectionMode: widget.isSelectionMode), 
-
       floatingActionButton: !isPhotosView
           ? FloatingActionButton(
               backgroundColor: Colors.green,
