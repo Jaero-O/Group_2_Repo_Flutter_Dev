@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'my_trees_page.dart';
-import 'photos_view.dart'; // ✅ New Photos View
+import 'photos_view.dart'; 
 
 class GalleryPage extends StatefulWidget {
-  final bool isSelectionMode; // 🔹 whether we are selecting photos for Dataset
-  final String? initialMode; // 🔹 start either in "Photos" or "My Trees"
-  final Function(List<String>)? onSelectionDone; // 🔹 callback for selected items
+  final bool isSelectionMode;
+  final String? initialMode; 
+  final Function(List<String>)? onSelectionDone; 
 
   const GalleryPage({
     super.key,
@@ -20,7 +20,7 @@ class GalleryPage extends StatefulWidget {
 
 
 class _GalleryPageState extends State<GalleryPage> {
-  // Now only manages the high-level view state
+  
   bool isPhotosView = true;
 
   @override
@@ -36,7 +36,6 @@ class _GalleryPageState extends State<GalleryPage> {
     return Scaffold(
       backgroundColor: Colors.white,
 
-      // ✅ TOP BAR (Switching logic remains here)
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
@@ -44,7 +43,6 @@ class _GalleryPageState extends State<GalleryPage> {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Title text (Photos or My Trees)
             Text(
               isPhotosView ? 'Photos' : 'My Trees',
               style: const TextStyle(
@@ -54,7 +52,6 @@ class _GalleryPageState extends State<GalleryPage> {
               ),
             ),
             
-            // Toggle button
             GestureDetector(
               onTap: () {
                 setState(() {
@@ -82,15 +79,14 @@ class _GalleryPageState extends State<GalleryPage> {
         ),
       ),
 
-      // ✅ BODY (Now uses the dedicated child widgets)
-      body: isPhotosView ? const PhotosView() : const MyTreesPage(),
+      body: isPhotosView 
+          ? PhotosView(isSelectionMode: widget.isSelectionMode, onSelectionDone: widget.onSelectionDone,) 
+          : MyTreesPage(isSelectionMode: widget.isSelectionMode), 
 
-      // ✅ FLOATING BUTTON (Only visible in My Trees view)
       floatingActionButton: !isPhotosView
           ? FloatingActionButton(
               backgroundColor: Colors.green,
               onPressed: () {
-                // ... (Album creation logic remains here)
                 showDialog(
                   context: context,
                   builder: (context) {
@@ -110,7 +106,6 @@ class _GalleryPageState extends State<GalleryPage> {
                         ),
                         ElevatedButton(
                           onPressed: () {
-                            // Add album logic here
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -131,8 +126,6 @@ class _GalleryPageState extends State<GalleryPage> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      
-      // Removed bottomNavigationBar property as it is now inside PhotosView
     );
   }
 }
