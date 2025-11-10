@@ -72,10 +72,11 @@ class PhotoGridContent extends StatelessWidget {
                 children: [
                   Text(
                     month,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                    style:
+                        const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
-                  _buildPhotoGrid(16), 
+                  _buildPhotoGrid(16),
                 ],
               ),
             ),
@@ -90,7 +91,7 @@ class PhotoGridContent extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$month $year', 
+                    '$month $year',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
@@ -110,8 +111,9 @@ class PhotoGridContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$month $day, $year', 
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      '$month $day, $year',
+                      style:
+                          const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
                     _buildPhotoGrid(8),
@@ -173,22 +175,42 @@ class _PhotosViewState extends State<PhotosView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        Expanded(
+        Positioned.fill(
           child: PhotoGridContent(viewMode: viewMode),
         ),
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildBottomButton('Years'),
-              _buildBottomButton('Months'),
-              _buildBottomButton('Days'),
-              _buildBottomButton('All Photos'),
-            ],
+
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 24.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              margin: const EdgeInsets.symmetric(horizontal: 30), 
+              
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildBottomButton('Years'),
+                  _buildBottomButton('Months'),
+                  _buildBottomButton('Days'),
+                  _buildBottomButton('All Photos'),
+                ],
+              ),
+            ),
           ),
         ),
       ],
@@ -204,7 +226,7 @@ class _PhotosViewState extends State<PhotosView> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
         decoration: BoxDecoration(
           color: isActive ? Colors.green[100] : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
