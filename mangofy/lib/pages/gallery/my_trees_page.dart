@@ -4,22 +4,27 @@ import 'album_photos_page.dart';
 class MyTreesPage extends StatelessWidget {
   final bool isSelectionMode;
   final ValueChanged<String>? onAlbumSelected;
+  final List<Map<String, dynamic>> albums; 
 
   const MyTreesPage({
     super.key,
-    this.isSelectionMode = false, 
+    this.isSelectionMode = false,
     this.onAlbumSelected,
+    this.albums = const [], 
   });
 
   @override
   Widget build(BuildContext context) {
-    final albums = [
-      {'title': 'Ahsilei Tree', 'location': 'Caloocan City', 'cover_image': 'images/leaf.png'},
-      {'title': 'Kuru Tree', 'location': 'Las Pinas City', 'cover_image': 'images/leaf.png'},
-      {'title': 'Mango Trees', 'location': 'Cavite', 'cover_image': 'images/leaf.png'},
-      {'title': 'Banana Grove', 'location': 'Laguna', 'cover_image': 'images/leaf.png'},
-      {'title': 'Coconut Field', 'location': 'Quezon', 'cover_image': 'images/leaf.png'},
-    ];
+    final displayAlbums = albums.isEmpty
+        ? [
+            {
+              'title': 'My First Album',
+              'location': 'Backyard',
+              'images': ['images/leaf.png'],
+              'cover_image': 'images/leaf.png',
+            },
+          ]
+        : albums;
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -29,19 +34,31 @@ class MyTreesPage extends StatelessWidget {
         mainAxisSpacing: 12,
         childAspectRatio: 0.75,
       ),
-      itemCount: albums.length,
+      itemCount: displayAlbums.length,
       itemBuilder: (context, index) {
-        final album = albums[index];
+        final album = displayAlbums[index];
+        final title = album['title'] as String;
+        final location = album['location'] as String? ?? '';
+        final images = album['images'] as List<String>? ?? [];
+        final String coverImage;
+        if (album.containsKey('cover_image') && (album['cover_image'] as String).isNotEmpty) {
+           coverImage = album['cover_image'] as String;
+        } else if (images.isNotEmpty && (images.last.contains('/') || images.last.contains('.'))) {
+          coverImage = images.last;
+        } else {
+          coverImage = 'images/leaf.png'; 
+        }
+
         return GestureDetector(
           onTap: () {
             if (isSelectionMode && onAlbumSelected != null) {
-              onAlbumSelected!(album['title']!);
+              onAlbumSelected!(title);
             } else {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) =>
-                      AlbumPhotosPage(albumTitle: album['title']!),
+                      AlbumPhotosPage(albumTitle: title, images: images),
                 ),
               );
             }
@@ -50,7 +67,7 @@ class MyTreesPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AspectRatio(
-                aspectRatio: 1.0, 
+                aspectRatio: 1.0,
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
@@ -63,35 +80,34 @@ class MyTreesPage extends StatelessWidget {
                       ),
                     ],
                     image: DecorationImage(
-                      image: AssetImage(album['cover_image']!),
+                      image: AssetImage(coverImage),
                       fit: BoxFit.cover,
                     ),
                   ),
                 ),
               ),
-
-              const SizedBox(height: 8), 
-
+              const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 4.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      album['title']!,
+                      title,
                       style: const TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
                     ),
-                    Text(
-                      album['location']!,
-                      style: TextStyle(
-                        color: Colors.black.withAlpha(178),
-                        fontSize: 12,
+                    if (location.isNotEmpty)
+                      Text(
+                        location,
+                        style: TextStyle(
+                          color: Colors.black.withAlpha(178),
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
