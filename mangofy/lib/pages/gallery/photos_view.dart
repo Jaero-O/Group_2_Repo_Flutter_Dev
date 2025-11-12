@@ -157,14 +157,7 @@ class PhotoGridContent extends StatelessWidget {
 }
 
 class PhotosView extends StatefulWidget {
-  final bool isSelectionMode;
-  final Function(List<String>)? onSelectionDone;
-
-  const PhotosView({
-    super.key,
-    this.isSelectionMode = false,
-    this.onSelectionDone,
-  });
+  const PhotosView({super.key});
 
   @override
   State<PhotosView> createState() => _PhotosViewState();
@@ -187,7 +180,7 @@ class _PhotosViewState extends State<PhotosView> {
             padding: const EdgeInsets.only(bottom: 24.0),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.85),
+                color: Colors.white.withValues(alpha: 217) ,
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: const [
                   BoxShadow(
