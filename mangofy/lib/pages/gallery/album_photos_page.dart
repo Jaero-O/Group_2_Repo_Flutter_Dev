@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 class AlbumPhotosPage extends StatelessWidget {
   final String albumTitle;
+  final List<String> images; 
 
-  const AlbumPhotosPage({super.key, required this.albumTitle});
+  const AlbumPhotosPage({
+    super.key,
+    required this.albumTitle,
+    this.images = const [], 
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +33,7 @@ class AlbumPhotosPage extends StatelessWidget {
           crossAxisSpacing: 6,
           mainAxisSpacing: 6,
         ),
-        itemCount: 15, // number of photos in the album
+        itemCount: 15, 
         itemBuilder: (context, index) {
           return Container(
             decoration: BoxDecoration(
