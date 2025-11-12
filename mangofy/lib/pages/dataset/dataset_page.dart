@@ -1,6 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../gallery/my_trees_page.dart';
+import '../gallery/gallery_page.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
+class SvgFolderIcon extends StatelessWidget {
+  final double size;
+  final String assetPath;
+
+  const SvgFolderIcon({
+    super.key,
+    this.assetPath = 'images/folder.svg',
+    this.size = 200,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SvgPicture.asset(assetPath, width: size, height: size);
+  }
+}
 
 class DatasetPage extends StatefulWidget {
   const DatasetPage({super.key});
@@ -10,13 +27,18 @@ class DatasetPage extends StatefulWidget {
 }
 
 class _DatasetPageState extends State<DatasetPage> {
-  final List<Map<String, dynamic>> folders = [];
+  final List<Map<String, dynamic>> folders = [
+    {'name': 'Training Data 1', 'images': List.generate(25, (i) => 'td1_$i')},
+    {'name': 'Test Samples', 'images': List.generate(12, (i) => 'ts_$i')},
+    {'name': 'My Trees Export', 'images': List.generate(40, (i) => 'mte_$i')},
+  ];
+
   String? pendingFolderName;
 
   static const Color topColorStart = Color(0xFF007700);
   static const Color topColorEnd = Color(0xFFC9FF8E);
   static const double kTopHeaderHeight = 220.0;
-  static const double kTopRadius = 90.0;
+  static const double kTopRadius = 70.0;
   static const double kContainerOverlap = 60.0;
   static const double kBottomRadius = 24.0;
   static const double kTitleTopPadding = 45.0;
@@ -38,7 +60,9 @@ class _DatasetPageState extends State<DatasetPage> {
             left: 0,
             right: 0,
             height: kTopHeaderHeight,
-            child: Container(decoration: const BoxDecoration(gradient: kGreenGradient)),
+            child: Container(
+              decoration: const BoxDecoration(gradient: kGreenGradient),
+            ),
           ),
           Positioned(
             top: kTitleTopPadding,
@@ -55,7 +79,7 @@ class _DatasetPageState extends State<DatasetPage> {
                       'Dataset',
                       style: GoogleFonts.inter(
                         fontSize: 28,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
                     ),
@@ -75,47 +99,57 @@ class _DatasetPageState extends State<DatasetPage> {
                 ),
               ),
               child: folders.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         'No folders yet.\nTap + to create one.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w400, 
+                          color: Colors.grey,
+                        ),
                       ),
                     )
                   : GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(30, 70, 16, 16),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                          ),
                       itemCount: folders.length,
                       itemBuilder: (context, index) {
                         final folder = folders[index];
-                        return Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: Colors.green[100],
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.folder, size: 48, color: Colors.green),
-                              const SizedBox(height: 8),
-                              Text(
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Center(child: SvgFolderIcon(size: 120)),
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 30),
+                              child: Text(
                                 folder['name'],
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600, 
+                                  fontSize: 14,
+                                  color: Colors.black,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 30),
+                              child: Text(
                                 '${folder['images'].length} items',
-                                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w400, 
+                                  fontSize: 12,
+                                  color: Colors.black,
+                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -132,243 +166,186 @@ class _DatasetPageState extends State<DatasetPage> {
   }
 
   void _showCreateFolderDialog(BuildContext parentContext) {
-    String folderName = pendingFolderName ?? '';
     showDialog(
       context: parentContext,
       builder: (context) {
-        return StatefulBuilder(builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text('Create New Folder'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  onChanged: (val) {
-                    folderName = val;
-                    pendingFolderName = val;
-                  },
-                  controller: TextEditingController(text: folderName),
-                  decoration: const InputDecoration(
-                    labelText: 'Folder Name',
-                    border: OutlineInputBorder(),
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+          title: Text(
+            'Create new dataset',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              Text(
+                'Select images from',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildFolderChoice(
+                    svgIcon: const SvgFolderIcon(size: 90),
+                    label: 'Gallery',
+                    onTap: () => _navigateToSelection(parentContext, '', null),
+                  ),
+                  const SizedBox(width: 15),
+                  _buildFolderChoice(
+                    svgIcon: const SvgFolderIcon(size: 90),
+                    label: 'My Trees',
+                    onTap: () =>
+                        _navigateToSelection(parentContext, '', 'My Trees'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 30),
+              Align(
+                alignment: Alignment.bottomRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF393939),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text('Select images from:', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildFolderChoice(
-                      icon: Icons.photo_library,
-                      label: 'Photos View',
-                      onTap: () => _navigateToSelection(parentContext, folderName, false),
-                    ),
-                    _buildFolderChoice(
-                      icon: Icons.folder_copy,
-                      label: 'My Trees',
-                      onTap: () => _navigateToSelection(parentContext, folderName, true),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(foregroundColor: Colors.grey[700]),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-              ],
-            ),
-          );
-        });
+              ),
+            ],
+          ),
+        );
       },
     );
   }
 
-  void _navigateToSelection(BuildContext parentContext, String folderName, bool isMyTreesMode) async {
-    if (folderName.isEmpty) {
-      ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Please enter a folder name first')),
-      );
-      return;
-    }
+  Future<String?> _showFolderNameDialog(BuildContext context) async {
+    String folderName = '';
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Enter Folder Name',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          content: TextField(
+            autofocus: true,
+            onChanged: (val) => folderName = val,
+            decoration: InputDecoration(
+              labelText: 'Folder Name',
+              border: const OutlineInputBorder(),
+              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, null),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (folderName.trim().isNotEmpty) {
+                  Navigator.pop(dialogContext, folderName.trim());
+                } else {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Folder name cannot be empty'),
+                    ),
+                  );
+                }
+              },
+              child: Text(
+                'Create',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _navigateToSelection(
+    BuildContext parentContext,
+    String folderName,
+    String? initialMode,
+  ) async {
     Navigator.pop(parentContext);
     final selected = await Navigator.push<List<String>>(
       parentContext,
       MaterialPageRoute(
-        builder: (_) => PhotoSelectionView(isMyTreesMode: isMyTreesMode),
+        builder: (_) =>
+            GalleryPage(isSelectionMode: true, initialMode: initialMode),
       ),
     );
+
     if (!mounted) return;
-    if (selected != null) {
-      setState(() {
-        folders.add({'name': folderName, 'images': selected});
-        pendingFolderName = null;
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showCreateFolderDialog(parentContext);
-      });
+
+    if (selected != null && selected.isNotEmpty) {
+      final finalFolderName = await _showFolderNameDialog(parentContext);
+
+      if (!mounted) return;
+
+      if (finalFolderName != null && finalFolderName.isNotEmpty) {
+        setState(() {
+          folders.add({'name': finalFolderName, 'images': selected});
+          pendingFolderName = null;
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showCreateFolderDialog(parentContext);
+        });
+      }
     }
   }
 
-  Widget _buildFolderChoice({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _buildFolderChoice({
+    required SvgFolderIcon svgIcon,
+    required String label,
+    required VoidCallback onTap,
+    Color? backgroundColor,
+  }) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        children: [
-          Icon(icon, size: 50, color: Colors.green),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-}
-
-class PhotoSelectionView extends StatefulWidget {
-  final bool isMyTreesMode;
-  const PhotoSelectionView({super.key, required this.isMyTreesMode});
-  @override
-  State<PhotoSelectionView> createState() => _PhotoSelectionViewState();
-}
-
-class _PhotoSelectionViewState extends State<PhotoSelectionView> {
-  final List<String> selectedImages = [];
-  String? selectedAlbumTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    String displayTitle;
-    if (widget.isMyTreesMode && selectedAlbumTitle == null) {
-      displayTitle = 'Select Album';
-    } else if (widget.isMyTreesMode && selectedAlbumTitle != null) {
-      displayTitle = 'Select from ${selectedAlbumTitle!}';
-    } else {
-      displayTitle = 'Select from Photos View';
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(displayTitle, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        automaticallyImplyLeading: selectedAlbumTitle != null,
-        leading: selectedAlbumTitle != null
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.green),
-                onPressed: () {
-                  setState(() {
-                    selectedAlbumTitle = null;
-                  });
-                },
-              )
-            : null,
-      ),
-      body: _buildBody(),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            OutlinedButton(
-              onPressed: () {
-                if (widget.isMyTreesMode && selectedAlbumTitle != null) {
-                  setState(() {
-                    selectedAlbumTitle = null;
-                  });
-                } else {
-                  Navigator.pop(context, null);
-                }
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.green,
-                side: const BorderSide(color: Colors.green),
-              ),
-              child: Text(widget.isMyTreesMode && selectedAlbumTitle != null ? 'Back to Albums' : 'Cancel'),
+      child: Container(
+        width: 130,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: backgroundColor ?? const Color(0xFFE4E4E4),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 2,
+              offset: Offset(0, 4),
             ),
-            ElevatedButton(
-              onPressed: selectedImages.isEmpty ? null : () => Navigator.pop(context, selectedImages),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: Text('Save (${selectedImages.length})'),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            svgIcon,
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.black,
+                fontWeight: FontWeight.w600, 
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (widget.isMyTreesMode && selectedAlbumTitle == null) {
-      return MyTreesPage(
-        isSelectionMode: true,
-        onAlbumSelected: (title) {
-          setState(() {
-            selectedAlbumTitle = title;
-          });
-        },
-      );
-    } else {
-      final contentKey = selectedAlbumTitle ?? 'AllPhotos';
-      return PhotosSelectionGrid(
-        contentKey: contentKey,
-        selectedImages: selectedImages,
-        onToggleSelection: (id) {
-          setState(() {
-            selectedImages.contains(id) ? selectedImages.remove(id) : selectedImages.add(id);
-          });
-        },
-      );
-    }
-  }
-}
-
-class PhotosSelectionGrid extends StatelessWidget {
-  final String contentKey;
-  final List<String> selectedImages;
-  final ValueChanged<String> onToggleSelection;
-  const PhotosSelectionGrid({
-    super.key,
-    required this.contentKey,
-    required this.selectedImages,
-    required this.onToggleSelection,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final itemCount = contentKey == 'AllPhotos' ? 16 : 8;
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        final imageId = '${contentKey}_photo_$index';
-        final selected = selectedImages.contains(imageId);
-        return GestureDetector(
-          onTap: () => onToggleSelection(imageId),
-          child: Container(
-            decoration: BoxDecoration(
-              color: selected ? Colors.green[200] : Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: selected ? Colors.green : Colors.transparent,
-                width: 2,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: selected
-                ? const Icon(Icons.check_circle, size: 30, color: Colors.green)
-                : const Icon(Icons.photo, size: 40, color: Colors.grey),
-          ),
-        );
-      },
     );
   }
 }
