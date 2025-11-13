@@ -120,7 +120,7 @@ class RecommendedActionsCard extends StatelessWidget {
                 ),
                 const Divider(),
                 _buildActionRow(
-                  percentage: '25%',
+                  percentage: '20%',
                   color: const Color(0xFF85D133),
                   description:
                       'Improve irrigation drainage: Avoid water accumulation near roots.',
