@@ -1,9 +1,12 @@
+// main.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mangofy/pages/home/home_page.dart';
 import 'package:mangofy/pages/scan/scan_page.dart';
 import 'package:mangofy/pages/gallery/gallery_page.dart';
 import 'package:mangofy/pages/dataset/dataset_page.dart';
+import 'splash_screen.dart'; 
 
 void main() {
   runApp(const MyApp());
@@ -19,73 +22,8 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
       ),
-      home: const SplashScreen(), // 👈 Start with splash screen
-    );
-  }
-}
-
-/// 🌿 Splash Screen
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    );
-
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _controller.forward();
-
-    _navigateToHome();
-  }
-
-  Future<void> _navigateToHome() async {
-    await Future.delayed(const Duration(seconds: 3));
-
-    if (!mounted) return;
-
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const MyHomePage(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 800),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
-      body: Center(
-        child: FadeTransition(
-          opacity: _animation,
-          child: Image.asset('images/logo.png', width: 160, height: 160),
-        ),
-      ),
+      home: const SplashScreen(
+          targetPage: MyHomePage()), 
     );
   }
 }

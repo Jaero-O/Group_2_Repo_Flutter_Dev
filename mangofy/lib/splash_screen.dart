@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../pages/home/home_page.dart'; // Replace with your actual home page
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  final Widget targetPage; 
+
+  const SplashScreen({super.key, required this.targetPage});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -17,22 +18,35 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Fade-in animation for logo
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 3),
     );
-
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
 
-    // Delay before navigating to home page
-    Future.delayed(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-    });
+    _navigateToHome();
+  }
+
+  Future<void> _navigateToHome() async {
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            widget.targetPage, 
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 800),
+      ),
+    );
   }
 
   @override
@@ -44,29 +58,14 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // or your brand color
+      backgroundColor: const Color(0xFFFAFAFA), 
       body: Center(
         child: FadeTransition(
           opacity: _animation,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Your app logo
-              Image.asset(
-                'images/logo.png', // <-- Replace with your logo path
-                width: 150,
-                height: 150,
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                "Bottled Bliss", // or your app name
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
+          child: Image.asset(
+            'images/logo.png',
+            width: 160,
+            height: 160,
           ),
         ),
       ),
