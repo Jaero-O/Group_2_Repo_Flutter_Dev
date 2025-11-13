@@ -19,7 +19,73 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
       ),
-      home: const MyHomePage(),
+      home: const SplashScreen(), // 👈 Start with splash screen
+    );
+  }
+}
+
+/// 🌿 Splash Screen
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    );
+
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _controller.forward();
+
+    _navigateToHome();
+  }
+
+  Future<void> _navigateToHome() async {
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const MyHomePage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 800),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFAFA),
+      body: Center(
+        child: FadeTransition(
+          opacity: _animation,
+          child: Image.asset('images/logo.png', width: 160, height: 160),
+        ),
+      ),
     );
   }
 }
@@ -46,14 +112,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF555555), 
-      // appBar: AppBar(
-      //   backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      //   title: Image.asset(
-      //     'images/logo.png', 
-      //     height: 150, 
-      //   ),
-      // ),
+      backgroundColor: const Color(0xFF555555),
       body: pages[currentPage],
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFFFAFAFA),
@@ -64,27 +123,21 @@ class _MyHomePageState extends State<MyHomePage> {
           });
         },
         indicatorColor: Colors.transparent,
-        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
-          (Set<WidgetState> states) {
-            final color = states.contains(WidgetState.selected)
-                ? selectedColor 
-                : Colors.grey;    
-
-            return TextStyle(
-              color: color,
-            );
-          },
-        ),
+        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
+          Set<WidgetState> states,
+        ) {
+          final color = states.contains(WidgetState.selected)
+              ? selectedColor
+              : Colors.grey;
+          return TextStyle(color: color);
+        }),
         destinations: [
           NavigationDestination(
             icon: SvgPicture.asset(
               'images/home.svg',
               height: 34,
               width: 34,
-              colorFilter: const ColorFilter.mode(
-                Colors.grey,
-                BlendMode.srcIn,
-              ), 
+              colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
             ),
             selectedIcon: SvgPicture.asset(
               'images/home.svg',
