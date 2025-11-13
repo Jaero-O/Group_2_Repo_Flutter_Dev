@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// Gradients are defined here as they are directly tied to severity
 const healthyGradient = LinearGradient(
   colors: [Color(0xFF85D133), Color(0xFF06850C)],
   begin: Alignment.centerLeft,
@@ -100,7 +99,7 @@ class SeverityDistributionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: const Color(0xFFFAFAFA), // Color alternative to white
+      color: const Color(0xFFFAFAFA),
       elevation: 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

@@ -14,7 +14,6 @@ class SummaryCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          // Gradient for the Summary Card
           gradient: const LinearGradient(
             colors: [
               Color(0xFF007700),
