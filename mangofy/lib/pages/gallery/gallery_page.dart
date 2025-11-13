@@ -26,6 +26,15 @@ class _GalleryPageState extends State<GalleryPage> {
 
   List<Map<String, dynamic>> myTreesAlbums = [];
 
+  List<String> _getCurrentImageIds() {
+    final String contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
+    final int itemCount = contentKey == 'AllPhotos' ? 40 : 15;
+    return List<String>.generate(
+      itemCount,
+      (index) => '${contentKey}_photo_$index',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +69,24 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
+  void _toggleSelectAll() {
+    setState(() {
+      final currentImageIds = _getCurrentImageIds();
+
+      final allSelected = currentImageIds.every(selectedImages.contains);
+
+      if (allSelected) {
+        selectedImages.removeWhere(currentImageIds.contains);
+      } else {
+        for (var id in currentImageIds) {
+          if (!selectedImages.contains(id)) {
+            selectedImages.add(id);
+          }
+        }
+      }
+    });
+  }
+
   void _handleBackButton() {
     if (!widget.isSelectionMode) {
       Navigator.pop(context);
@@ -86,8 +113,11 @@ class _GalleryPageState extends State<GalleryPage> {
 
     if (isPhotoSelectionScreen) {
       final contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
+      final allImageIds = _getCurrentImageIds();
+
       return PhotosSelectionGrid(
         contentKey: contentKey,
+        allImageIds: allImageIds, 
         selectedImages: selectedImages,
         onToggleSelection: _toggleSelection,
       );
@@ -139,10 +169,8 @@ class _GalleryPageState extends State<GalleryPage> {
     final selectedImageIds = await Navigator.push<List<String>>(
       context,
       MaterialPageRoute(
-        builder: (context) => GalleryPage(
-          isSelectionMode: true,
-          initialMode: null,
-        ),
+        builder: (context) =>
+            GalleryPage(isSelectionMode: true, initialMode: null),
       ),
     );
 
@@ -151,8 +179,8 @@ class _GalleryPageState extends State<GalleryPage> {
         myTreesAlbums.add({
           'title': albumName,
           'images': selectedImageIds,
-          'location': 'New Album Location', 
-          'cover_image': 'images/leaf.png', 
+          'location': 'New Album Location',
+          'cover_image': 'images/leaf.png',
         });
       });
 
@@ -172,12 +200,12 @@ class _GalleryPageState extends State<GalleryPage> {
     }
 
     return Positioned(
-      bottom: 100,
-      right: 16,
+      top: 30,
+      right: 25,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.green,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           boxShadow: const [
             BoxShadow(
@@ -188,9 +216,9 @@ class _GalleryPageState extends State<GalleryPage> {
           ],
         ),
         child: Text(
-          '${selectedImages.length} selected',
+          '${selectedImages.length} image${selectedImages.length == 1 ? '' : 's'} selected',
           style: GoogleFonts.inter(
-            color: Colors.white,
+            color: Colors.black87,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -202,6 +230,17 @@ class _GalleryPageState extends State<GalleryPage> {
   Widget build(BuildContext context) {
     final String toggleText = isPhotosView ? 'My Trees' : 'Photos';
 
+    final bool isPhotoSelectionScreen =
+        widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
+
+    final int totalImagesInView = isPhotoSelectionScreen
+        ? _getCurrentImageIds().length
+        : 0;
+
+    final bool allImagesSelected =
+        totalImagesInView > 0 &&
+        _getCurrentImageIds().every(selectedImages.contains);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -212,12 +251,14 @@ class _GalleryPageState extends State<GalleryPage> {
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              _getAppBarTitle(),
-              style: GoogleFonts.inter(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
+            Expanded(
+              child: Text(
+                _getAppBarTitle(),
+                style: GoogleFonts.inter(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
               ),
             ),
             if (!widget.isSelectionMode)
@@ -246,13 +287,24 @@ class _GalleryPageState extends State<GalleryPage> {
               ),
           ],
         ),
+        actions: isPhotoSelectionScreen
+            ? [
+                TextButton(
+                  onPressed: _toggleSelectAll,
+                  child: Text(
+                    allImagesSelected ? 'Deselect All' : 'Select All',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ]
+            : null,
       ),
-      body: Stack(
-        children: [
-          _buildBodyContent(),
-          _buildSelectedCountChip(),
-        ],
-      ),
+      body: Stack(children: [_buildBodyContent(), _buildSelectedCountChip()]),
       bottomNavigationBar: widget.isSelectionMode
           ? Padding(
               padding: const EdgeInsets.all(16),
@@ -274,7 +326,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   ElevatedButton(
                     onPressed: selectedImages.isEmpty
                         ? null
-                        : () => Navigator.pop(context, selectedImages),
+                        : () => widget.onSelectionDone != null
+                              ? widget.onSelectionDone!(
+                                  selectedImages,
+                                ) 
+                              : Navigator.pop(context, selectedImages),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                     ),
@@ -297,19 +353,22 @@ class _GalleryPageState extends State<GalleryPage> {
 
 class PhotosSelectionGrid extends StatelessWidget {
   final String contentKey;
+  final List<String>
+  allImageIds; 
   final List<String> selectedImages;
   final ValueChanged<String> onToggleSelection;
 
   const PhotosSelectionGrid({
     super.key,
     required this.contentKey,
+    required this.allImageIds, 
     required this.selectedImages,
     required this.onToggleSelection,
   });
 
   @override
   Widget build(BuildContext context) {
-    final itemCount = contentKey == 'AllPhotos' ? 40 : 15;
+    final itemCount = allImageIds.length;
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -320,7 +379,7 @@ class PhotosSelectionGrid extends StatelessWidget {
       ),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        final imageId = '${contentKey}_photo_$index';
+        final imageId = allImageIds[index];
         final selected = selectedImages.contains(imageId);
 
         return GestureDetector(
