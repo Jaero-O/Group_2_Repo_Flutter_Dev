@@ -3,6 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../gallery/gallery_page.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+/// A reusable widget to display an SVG folder icon.
+/// 
+/// [size] defines the width and height of the icon.
+/// [assetPath] defines the path of the SVG asset.
 class SvgFolderIcon extends StatelessWidget {
   final double size;
   final String assetPath;
@@ -19,6 +23,8 @@ class SvgFolderIcon extends StatelessWidget {
   }
 }
 
+/// The DatasetPage widget displays a list of dataset folders
+/// and allows users to create new datasets by selecting images.
 class DatasetPage extends StatefulWidget {
   const DatasetPage({super.key});
 
@@ -27,14 +33,17 @@ class DatasetPage extends StatefulWidget {
 }
 
 class _DatasetPageState extends State<DatasetPage> {
+  /// List of folders containing folder name and images
   final List<Map<String, dynamic>> folders = [
     {'name': 'Training Data 1', 'images': List.generate(25, (i) => 'td1_$i')},
     {'name': 'Test Samples', 'images': List.generate(12, (i) => 'ts_$i')},
     {'name': 'My Trees Export', 'images': List.generate(40, (i) => 'mte_$i')},
   ];
 
+  /// Stores a temporary folder name during creation
   String? pendingFolderName;
 
+  /// UI constants for styling the top header and containers
   static const Color topColorStart = Color(0xFF007700);
   static const Color topColorEnd = Color(0xFFC9FF8E);
   static const double kTopHeaderHeight = 220.0;
@@ -43,6 +52,7 @@ class _DatasetPageState extends State<DatasetPage> {
   static const double kBottomRadius = 24.0;
   static const double kTitleTopPadding = 45.0;
 
+  /// Gradient used for the top header background
   static const LinearGradient kGreenGradient = LinearGradient(
     colors: [topColorStart, topColorEnd],
     begin: Alignment.topCenter,
@@ -55,6 +65,7 @@ class _DatasetPageState extends State<DatasetPage> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
+          // Top header with green gradient
           Positioned(
             top: 0,
             left: 0,
@@ -64,6 +75,8 @@ class _DatasetPageState extends State<DatasetPage> {
               decoration: const BoxDecoration(gradient: kGreenGradient),
             ),
           ),
+
+          // Page title displayed on top of header
           Positioned(
             top: kTitleTopPadding,
             left: 16,
@@ -88,6 +101,8 @@ class _DatasetPageState extends State<DatasetPage> {
               ),
             ),
           ),
+
+          // Main container displaying folders
           Positioned.fill(
             top: kTopHeaderHeight - kContainerOverlap,
             child: Container(
@@ -98,6 +113,7 @@ class _DatasetPageState extends State<DatasetPage> {
                   bottom: Radius.circular(kBottomRadius),
                 ),
               ),
+              // Display either a message or grid of folders
               child: folders.isEmpty
                   ? Center(
                       child: Text(
@@ -105,7 +121,7 @@ class _DatasetPageState extends State<DatasetPage> {
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 16,
-                          fontWeight: FontWeight.w400, 
+                          fontWeight: FontWeight.w400,
                           color: Colors.grey,
                         ),
                       ),
@@ -114,10 +130,10 @@ class _DatasetPageState extends State<DatasetPage> {
                       padding: const EdgeInsets.fromLTRB(30, 70, 16, 16),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
                       itemCount: folders.length,
                       itemBuilder: (context, index) {
                         final folder = folders[index];
@@ -131,7 +147,7 @@ class _DatasetPageState extends State<DatasetPage> {
                               child: Text(
                                 folder['name'],
                                 style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w600, 
+                                  fontWeight: FontWeight.w600,
                                   fontSize: 14,
                                   color: Colors.black,
                                 ),
@@ -143,7 +159,7 @@ class _DatasetPageState extends State<DatasetPage> {
                               child: Text(
                                 '${folder['images'].length} items',
                                 style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w400, 
+                                  fontWeight: FontWeight.w400,
                                   fontSize: 12,
                                   color: Colors.black,
                                 ),
@@ -157,6 +173,7 @@ class _DatasetPageState extends State<DatasetPage> {
           ),
         ],
       ),
+      // Floating action button to create a new dataset
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.green,
         onPressed: () => _showCreateFolderDialog(context),
@@ -165,6 +182,7 @@ class _DatasetPageState extends State<DatasetPage> {
     );
   }
 
+  /// Shows a dialog to select source images when creating a new dataset
   void _showCreateFolderDialog(BuildContext parentContext) {
     showDialog(
       context: parentContext,
@@ -190,12 +208,14 @@ class _DatasetPageState extends State<DatasetPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Option to select images from Gallery
                   _buildFolderChoice(
                     svgIcon: const SvgFolderIcon(size: 90),
                     label: 'Gallery',
                     onTap: () => _navigateToSelection(parentContext, '', null),
                   ),
                   const SizedBox(width: 15),
+                  // Option to select images from My Trees
                   _buildFolderChoice(
                     svgIcon: const SvgFolderIcon(size: 90),
                     label: 'My Trees',
@@ -225,6 +245,7 @@ class _DatasetPageState extends State<DatasetPage> {
     );
   }
 
+  /// Shows a dialog for entering the new folder name
   Future<String?> _showFolderNameDialog(BuildContext context) async {
     String folderName = '';
     return showDialog<String>(
@@ -275,6 +296,7 @@ class _DatasetPageState extends State<DatasetPage> {
     );
   }
 
+  /// Navigates to the gallery selection page and handles folder creation
   void _navigateToSelection(
     BuildContext parentContext,
     String folderName,
@@ -297,11 +319,13 @@ class _DatasetPageState extends State<DatasetPage> {
       if (!mounted) return;
 
       if (finalFolderName != null && finalFolderName.isNotEmpty) {
+        // Add new folder with selected images
         setState(() {
           folders.add({'name': finalFolderName, 'images': selected});
           pendingFolderName = null;
         });
       } else {
+        // If folder name not entered, reopen the creation dialog
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _showCreateFolderDialog(parentContext);
         });
@@ -309,6 +333,7 @@ class _DatasetPageState extends State<DatasetPage> {
     }
   }
 
+  /// Builds an individual folder choice card in the creation dialog
   Widget _buildFolderChoice({
     required SvgFolderIcon svgIcon,
     required String label,
@@ -340,7 +365,7 @@ class _DatasetPageState extends State<DatasetPage> {
               label,
               style: GoogleFonts.inter(
                 color: Colors.black,
-                fontWeight: FontWeight.w600, 
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

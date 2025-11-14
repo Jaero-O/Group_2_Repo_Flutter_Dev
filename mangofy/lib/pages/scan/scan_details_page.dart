@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class ScanDetailsPage extends StatelessWidget {
-  final String scanTitle;
-  final String disease;
-  final String dateScanned;
-  final String severityValue;
-  final Color severityColor;
+  // Required scan details passed when opening this page
+  final String scanTitle;      // Title of the scan
+  final String disease;        // Detected disease name (anthracnose, other disease)
+  final String dateScanned;    // Date of scan
+  final String severityValue;  // Severity percentage value
+  final Color severityColor;   // Color representing severity level
 
   const ScanDetailsPage({
     super.key,
@@ -17,19 +18,24 @@ class ScanDetailsPage extends StatelessWidget {
     required this.severityColor,
   });
 
+  // Placeholder for long description text
   static const String kLongDescription =
       'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.';
-  
+
+  // Placeholder for recommended actions text
   static const String kRecommendedActions =
       'Apply a broad-spectrum fungicide (such as chlorothalonil or mancozeb) every 7-14 days. Ensure proper tree pruning to improve air circulation and sunlight penetration. Rake and dispose of all fallen infected leaves to reduce the source of fungal spores.';
+
+  // Custom app bar with back button and page title
   Widget _buildCustomAppBar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 16), // Top padding for status bar
       alignment: Alignment.centerLeft,
       child: Row(
         children: [
+          // Back button
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: () => Navigator.pop(context), // Navigate back
             child: Row(
               children: [
                 const Icon(Icons.arrow_back_ios, color: Color(0xFF48742C), size: 20),
@@ -43,6 +49,7 @@ class ScanDetailsPage extends StatelessWidget {
               ],
             ),
           ),
+          // Page title centered
           Expanded(
             child: Text(
               'Scan Details',
@@ -54,14 +61,15 @@ class ScanDetailsPage extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 60), 
+          const SizedBox(width: 60), // Space to balance back button
         ],
       ),
     );
   }
 
+  // Build a colored disease tag
   Widget _buildDiseaseTag(String disease) {
-    final Color tagBackgroundColor = severityColor.withValues(alpha: 0.2); 
+    final Color tagBackgroundColor = severityColor.withValues(alpha: 0.2); // Light background based on severity
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -84,11 +92,14 @@ class ScanDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.white, // Page background color
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Custom app bar at top
           _buildCustomAppBar(context),
+
+          // Main content scrollable area
           Expanded(
             child: CustomScrollView(
               slivers: [
@@ -100,6 +111,7 @@ class ScanDetailsPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Image preview container
                             Container(
                               height: 200,
                               margin: const EdgeInsets.only(bottom: 24),
@@ -119,10 +131,12 @@ class ScanDetailsPage extends StatelessWidget {
                               ),
                             ),
 
+                            // Severity display with disease tag
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
+                                // Severity value
                                 Text(
                                   '$severityValue%', 
                                   style: GoogleFonts.inter( 
@@ -132,14 +146,17 @@ class ScanDetailsPage extends StatelessWidget {
                                     height: 1.0, 
                                   ),
                                 ),
-                                const SizedBox(width: 8), 
+                                const SizedBox(width: 8),
+                                // Disease tag
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: _buildDiseaseTag(disease),
                                 ),
                               ],
                             ),
+
                             const SizedBox(height: 4),
+                            // Severity level label
                             Text(
                               'SEVERITY LEVEL',
                               style: GoogleFonts.inter(
@@ -151,6 +168,7 @@ class ScanDetailsPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 32),
 
+                            // Description section
                             Text(
                               'Description',
                               style: GoogleFonts.inter( 
@@ -170,6 +188,7 @@ class ScanDetailsPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 32),
 
+                            // Date scanned
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -192,6 +211,7 @@ class ScanDetailsPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 32),
 
+                            // Recommended actions section
                             Text(
                               'Recommended Actions',
                               style: GoogleFonts.inter(

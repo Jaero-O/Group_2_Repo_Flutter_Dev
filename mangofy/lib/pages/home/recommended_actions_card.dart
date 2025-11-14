@@ -5,15 +5,17 @@ import 'package:fl_chart/fl_chart.dart';
 class RecommendedActionsCard extends StatelessWidget {
   const RecommendedActionsCard({super.key});
 
+  // Builds a single row representing a recommended action with its percentage and description
   Widget _buildActionRow({
-    required String percentage,
-    required Color color,
-    required String description,
-    Color descriptionColor = const Color(0xFF555555),
+    required String percentage, // Percentage value to display
+    required Color color, // Color for the percentage text
+    required String description, // Description of the action
+    Color descriptionColor = const Color(0xFF555555), // Optional color for description text
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Display percentage
         SizedBox(
           width: 80.0,
           child: Text(
@@ -26,6 +28,8 @@ class RecommendedActionsCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 16),
+
+        // Display action description
         Expanded(
           child: Text(
             description,
@@ -44,6 +48,7 @@ class RecommendedActionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      // Card background and shape
       color: const Color(0xFFFAFAFA), 
       elevation: 3,
       shape: RoundedRectangleBorder(
@@ -51,7 +56,7 @@ class RecommendedActionsCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Donut Chart
+          // Donut Pie Chart showing percentage distribution
           Positioned(
             top: 30,
             right: 20,
@@ -60,9 +65,10 @@ class RecommendedActionsCard extends StatelessWidget {
               width: 150,
               child: PieChart(
                 PieChartData(
-                  centerSpaceRadius: 50,
-                  sectionsSpace: 1,
+                  centerSpaceRadius: 50, // Inner circle radius
+                  sectionsSpace: 1, // Space between chart sections
                   sections: [
+                    // Each section of the chart
                     PieChartSectionData(
                       value: 75,
                       color: const Color(0xFF06850C),
@@ -86,16 +92,20 @@ class RecommendedActionsCard extends StatelessWidget {
               ),
             ),
           ),
+
+          // Main content: action text and percentage
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Top action with large percentage and detailed description
                 Padding(
                   padding: const EdgeInsets.only(right: 150.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Large percentage text
                       Text(
                         '75%',
                         style: GoogleFonts.inter(
@@ -104,6 +114,8 @@ class RecommendedActionsCard extends StatelessWidget {
                           color: const Color(0xFF06850C),
                         ),
                       ),
+
+                      // Description of top action
                       Padding(
                         padding: const EdgeInsets.only(top: 4.0),
                         child: Text(
@@ -118,7 +130,10 @@ class RecommendedActionsCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Divider(),
+
+                const Divider(), // Divider between actions
+
+                // Other recommended actions
                 _buildActionRow(
                   percentage: '20%',
                   color: const Color(0xFF85D133),

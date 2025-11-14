@@ -3,6 +3,7 @@ import 'summary_card.dart';
 import 'recommended_actions_card.dart';
 import 'severity_distributions_card.dart';
 
+// Main home page of the app displaying the dashboard overview.
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -12,11 +13,13 @@ class HomePage extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
+            // Top section with Summary heading and summary card
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Section title: Summary
                   const Padding(
                     padding: EdgeInsets.only(left: 8),
                     child: Text(
@@ -27,19 +30,23 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 12),
-                  
+
+                  // Widget displaying summarized key metrics
                   const SummaryCard(),
                 ],
               ),
             ),
 
+            // Scrollable section for Recommended Actions and Severity Distributions
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Section title: Recommended Actions
                     const Padding(
                       padding: EdgeInsets.only(left: 8),
                       child: Text(
@@ -52,10 +59,12 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
 
+                    // Widget displaying recommended actions for the user
                     const RecommendedActionsCard(),
 
                     const SizedBox(height: 30),
 
+                    // Section title: Severity Distributions
                     const Padding(
                       padding: EdgeInsets.only(left: 8),
                       child: Text(
@@ -68,6 +77,7 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
 
+                    // Widget displaying severity distribution charts or stats
                     const SeverityDistributionsCard(),
                   ],
                 ),

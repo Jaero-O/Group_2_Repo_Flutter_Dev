@@ -1,5 +1,3 @@
-// main.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mangofy/pages/home/home_page.dart';
@@ -8,26 +6,31 @@ import 'package:mangofy/pages/gallery/gallery_page.dart';
 import 'package:mangofy/pages/dataset/dataset_page.dart';
 import 'splash_screen.dart'; 
 
+/// Entry point of the application.
 void main() {
   runApp(const MyApp());
 }
 
+/// Root widget of the application.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
+      debugShowCheckedModeBanner: false, // Disable debug banner
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green), // Base color theme
       ),
       home: const SplashScreen(
-          targetPage: MyHomePage()), 
+        targetPage: MyHomePage(), // Navigate to home page after splash
+      ),
     );
   }
 }
 
+/// Main home page widget that contains bottom navigation
+/// and manages switching between app sections.
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
 
@@ -36,8 +39,9 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int currentPage = 0;
+  int currentPage = 0; // Index of the currently selected page
 
+  /// List of pages corresponding to bottom navigation items
   final List<Widget> pages = const [
     HomePage(),
     ScanPage(),
@@ -45,31 +49,34 @@ class _MyHomePageState extends State<MyHomePage> {
     DatasetPage(),
   ];
 
-  static const Color selectedColor = Color(0xFF007700);
+  static const Color selectedColor = Color(0xFF007700); // Color for selected navigation item
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF555555),
-      body: pages[currentPage],
+      backgroundColor: const Color(0xFF555555), // App background color
+      body: pages[currentPage], // Display the currently selected page
       bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFFFAFAFA),
-        selectedIndex: currentPage,
+        backgroundColor: const Color(0xFFFAFAFA), // Bottom bar background
+        selectedIndex: currentPage, // Currently selected index
         onDestinationSelected: (int index) {
+          // Update selected page when a navigation item is tapped
           setState(() {
             currentPage = index;
           });
         },
-        indicatorColor: Colors.transparent,
-        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
-          Set<WidgetState> states,
-        ) {
-          final color = states.contains(WidgetState.selected)
-              ? selectedColor
-              : Colors.grey;
-          return TextStyle(color: color);
-        }),
+        indicatorColor: Colors.transparent, // Remove default selection indicator
+        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
+          (Set<WidgetState> states) {
+            // Text style for selected and unselected labels
+            final color = states.contains(WidgetState.selected)
+                ? selectedColor
+                : Colors.grey;
+            return TextStyle(color: color);
+          },
+        ),
         destinations: [
+          // Home navigation item
           NavigationDestination(
             icon: SvgPicture.asset(
               'images/home.svg',
@@ -88,6 +95,8 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             label: 'Home',
           ),
+
+          // Scan navigation item
           NavigationDestination(
             icon: SvgPicture.asset(
               'images/scan.svg',
@@ -106,6 +115,8 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             label: 'Scan',
           ),
+
+          // Gallery navigation item
           NavigationDestination(
             icon: SvgPicture.asset(
               'images/gallery.svg',
@@ -124,6 +135,8 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             label: 'Gallery',
           ),
+
+          // Dataset navigation item
           NavigationDestination(
             icon: SvgPicture.asset(
               'images/database.svg',

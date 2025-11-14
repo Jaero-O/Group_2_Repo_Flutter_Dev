@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+// Define gradient colors for different severity levels
 const healthyGradient = LinearGradient(
   colors: [Color(0xFF85D133), Color(0xFF06850C)],
   begin: Alignment.centerLeft,
@@ -20,27 +21,31 @@ const severeGradient = LinearGradient(
 class SeverityDistributionsCard extends StatelessWidget {
   const SeverityDistributionsCard({super.key});
 
+  // Builds a single severity bar with label, percentage, range, and gradient color
   Widget _buildSeverityBar({
-    required String label,
-    required String percentage,
-    required String range,
-    required LinearGradient gradient,
+    required String label, // Severity label
+    required String percentage, // Displayed percentage string 
+    required String range, // Range description
+    required LinearGradient gradient, // Gradient for the progress bar
   }) {
+    // Convert percentage string to numeric value
     final String numericString = percentage.replaceAll(RegExp(r'[^\d.]'), '');
     final double value = double.tryParse(numericString) ?? 0.0;
-    final double progressValue = value / 100.0;
-    const double radius = 12.0;
+    final double progressValue = value / 100.0; // Convert to 0-1 scale
+    const double radius = 12.0; // Border radius for progress bar
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Row containing label, range, and percentage text
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
+                  // Severity label
                   Text(
                     label,
                     style: GoogleFonts.inter(
@@ -50,6 +55,7 @@ class SeverityDistributionsCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Range text
                   Text(
                     range,
                     style: GoogleFonts.inter(
@@ -59,6 +65,7 @@ class SeverityDistributionsCard extends StatelessWidget {
                   ),
                 ],
               ),
+              // Percentage text
               Text(
                 percentage,
                 style: GoogleFonts.inter(
@@ -70,15 +77,20 @@ class SeverityDistributionsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+
+          // Progress bar container
           ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: Stack(
               children: [
+                // Background bar
                 Container(height: 16, color: Colors.grey[300]),
+
+                // Foreground colored progress bar based on percentage
                 Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
-                    widthFactor: progressValue.clamp(0.0, 1.0),
+                    widthFactor: progressValue.clamp(0.0, 1.0), // Clamp to 0-1
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(radius),
                       child: Container(
@@ -99,6 +111,7 @@ class SeverityDistributionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      // Card background and rounded edges
       color: const Color(0xFFFAFAFA),
       elevation: 3,
       shape: RoundedRectangleBorder(
@@ -109,18 +122,23 @@ class SeverityDistributionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Healthy severity bar
             _buildSeverityBar(
               label: 'Healthy',
               percentage: '35%',
               range: '(0% - 5%)',
               gradient: healthyGradient,
             ),
+
+            // Moderate severity bar
             _buildSeverityBar(
               label: 'Moderate',
               percentage: '20%',
               range: '(6% - 40%)',
               gradient: moderateGradient,
             ),
+
+            // Severe severity bar
             _buildSeverityBar(
               label: 'Severe',
               percentage: '45%',

@@ -3,9 +3,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'my_trees_page.dart';
 import 'photos_view.dart';
 
+/// Page for viewing photos, albums, and optionally selecting images.
+/// Supports two modes:
+/// - Normal browsing: viewing photos and albums
+/// - Selection mode: selecting images for creating datasets or albums
 class GalleryPage extends StatefulWidget {
+  /// If true, page is in selection mode for picking images
   final bool isSelectionMode;
+
+  /// Initial view mode: 'My Trees' or null
   final String? initialMode;
+
+  /// Callback when selection is done (returns list of selected image IDs)
   final Function(List<String>)? onSelectionDone;
 
   const GalleryPage({
@@ -20,12 +29,19 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> {
+  /// True if displaying photos; false if displaying albums ('My Trees')
   bool isPhotosView = true;
+
+  /// List of selected image IDs in selection mode
   final List<String> selectedImages = [];
+
+  /// Album currently selected in selection mode
   String? selectedAlbumTitle;
 
+  /// List of user's albums for 'My Trees'
   List<Map<String, dynamic>> myTreesAlbums = [];
 
+  /// Generates a list of current image IDs based on view
   List<String> _getCurrentImageIds() {
     final String contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
     final int itemCount = contentKey == 'AllPhotos' ? 40 : 15;
@@ -38,6 +54,7 @@ class _GalleryPageState extends State<GalleryPage> {
   @override
   void initState() {
     super.initState();
+    // Initialize view based on initial mode or selection mode
     if (widget.initialMode == 'My Trees') {
       isPhotosView = false;
     }
@@ -46,6 +63,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  /// Returns the AppBar title based on current mode and selection
   String _getAppBarTitle() {
     if (!widget.isSelectionMode) {
       return isPhotosView ? 'Gallery' : 'My Trees';
@@ -61,6 +79,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  /// Toggles selection state of a single image
   void _toggleSelection(String id) {
     setState(() {
       selectedImages.contains(id)
@@ -69,10 +88,10 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
+  /// Selects or deselects all images currently displayed
   void _toggleSelectAll() {
     setState(() {
       final currentImageIds = _getCurrentImageIds();
-
       final allSelected = currentImageIds.every(selectedImages.contains);
 
       if (allSelected) {
@@ -87,6 +106,7 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
+  /// Handles back button behavior based on mode
   void _handleBackButton() {
     if (!widget.isSelectionMode) {
       Navigator.pop(context);
@@ -101,6 +121,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  /// Builds the main body content depending on mode
   Widget _buildBodyContent() {
     final bool isPhotoSelectionScreen =
         widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
@@ -117,7 +138,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
       return PhotosSelectionGrid(
         contentKey: contentKey,
-        allImageIds: allImageIds, 
+        allImageIds: allImageIds,
         selectedImages: selectedImages,
         onToggleSelection: _toggleSelection,
       );
@@ -134,6 +155,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  /// Shows a dialog to create a new album
   void _showCreateAlbumDialog() {
     String newAlbum = '';
     showDialog(
@@ -165,6 +187,7 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
+  /// Opens selection page to add images to a new album
   void _navigateToSelectionForAlbum(String albumName) async {
     final selectedImageIds = await Navigator.push<List<String>>(
       context,
@@ -194,6 +217,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  /// Displays a small chip showing the count of selected images
   Widget _buildSelectedCountChip() {
     if (!widget.isSelectionMode || selectedImages.isEmpty) {
       return const SizedBox.shrink();
@@ -329,7 +353,7 @@ class _GalleryPageState extends State<GalleryPage> {
                         : () => widget.onSelectionDone != null
                               ? widget.onSelectionDone!(
                                   selectedImages,
-                                ) 
+                                )
                               : Navigator.pop(context, selectedImages),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
@@ -351,17 +375,24 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 }
 
+/// Grid widget for selecting photos in selection mode
 class PhotosSelectionGrid extends StatelessWidget {
+  /// Key representing current content (AllPhotos or album name)
   final String contentKey;
-  final List<String>
-  allImageIds; 
+
+  /// List of all image IDs in the current view
+  final List<String> allImageIds;
+
+  /// Currently selected images
   final List<String> selectedImages;
+
+  /// Callback for toggling selection of an image
   final ValueChanged<String> onToggleSelection;
 
   const PhotosSelectionGrid({
     super.key,
     required this.contentKey,
-    required this.allImageIds, 
+    required this.allImageIds,
     required this.selectedImages,
     required this.onToggleSelection,
   });
