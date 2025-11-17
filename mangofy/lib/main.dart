@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:mangofy/pages/home/home_page.dart';
-import 'package:mangofy/pages/scan/scan_page.dart';
-import 'package:mangofy/pages/gallery/gallery_page.dart';
-import 'package:mangofy/pages/dataset/dataset_page.dart';
+import 'package:Mangofy/pages/home/home_page.dart';
+import 'package:Mangofy/pages/scan/scan_page.dart';
+import 'package:Mangofy/pages/gallery/gallery_page.dart';
+import 'package:Mangofy/pages/dataset/dataset_page.dart';
 import 'splash_screen.dart'; 
 
 /// Entry point of the application.
