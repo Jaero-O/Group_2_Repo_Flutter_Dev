@@ -201,7 +201,7 @@ class _PhotosViewState extends State<PhotosView> {
             padding: const EdgeInsets.only(bottom: 24.0),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(217),
+                color: Colors.white.withAlpha(190),
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: const [
                   BoxShadow(
@@ -212,7 +212,7 @@ class _PhotosViewState extends State<PhotosView> {
                 ],
               ),
               margin: const EdgeInsets.symmetric(horizontal: 30),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -241,14 +241,14 @@ class _PhotosViewState extends State<PhotosView> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
         decoration: BoxDecoration(
-          color: isActive ? Colors.green[100] : Colors.transparent,
+          color: isActive ? Colors.grey : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            color: isActive ? Colors.green : Colors.black54,
+            color: isActive ? Colors.white : Colors.grey,
           ),
         ),
       ),
