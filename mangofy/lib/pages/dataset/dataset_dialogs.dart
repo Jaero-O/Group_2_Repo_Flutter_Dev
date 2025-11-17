@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-import '../gallery/gallery_page.dart'; // Assumed import for GalleryPage
-import 'svg_folder_icon.dart';
+import '../gallery/gallery_page.dart';
+import 'dataset_widgets.dart';
 
 /// Type definition for the callback when a folder is created.
 typedef FolderCreationCallback =
@@ -143,7 +142,7 @@ class DatasetDialogs {
   ) async {
     Navigator.pop(parentContext); // Close the selection dialog
 
-    // Assumes GalleryPage accepts 'isSelectionMode: true' and 'initialMode'
+    // GalleryPage accepts 'isSelectionMode: true' and 'initialMode'
     final selected = await Navigator.push<List<String>>(
       parentContext,
       MaterialPageRoute(

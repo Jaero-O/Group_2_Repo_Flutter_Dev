@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import 'dataset_constants.dart';
 import 'dataset_dialogs.dart';
-import 'folder_view_page.dart';
-import 'svg_folder_icon.dart';
+import 'dataset_widgets.dart'; 
 
 /// The DatasetPage widget displays a list of dataset folders
 /// and allows users to create new datasets by selecting images.
@@ -44,7 +42,7 @@ class _DatasetPageState extends State<DatasetPage> {
             ),
           ),
 
-          // Page title displayed on top of header
+          // Page title
           Positioned(
             top: DatasetConstants.kTitleTopPadding,
             left: 16,
