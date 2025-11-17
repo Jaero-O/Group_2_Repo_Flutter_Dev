@@ -1,30 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; 
+import 'package:google_fonts/google_fonts.dart';
 import 'scan_details_page.dart';
+import '../../ui/green_header_background.dart';
+import 'scan_constants.dart'; // New Import
 
 /// ScanPage displays a history of leaf scans.
 class ScanPage extends StatelessWidget {
   const ScanPage({super.key});
-
-  // Top header gradient colors
-  static const Color topColorStart = Color(0xFF007700);
-  static const Color topColorEnd = Color(0xFFC9FF8E);
-
-  // Layout constants
-  static const double kTopHeaderHeight = 220.0;
-  static const double kTopRadius = 70.0;
-  static const double kContainerOverlap = 60.0;
-  static const double kCardOverlapHeight = 100.0;
-  static const double kCardAreaHeight = 120.0;
-  static const double kButtonAreaHeight = 45.0;
-  static const double kBottomRadius = 24.0;
-
-  // Linear gradient for top header
-  static const LinearGradient kGreenGradient = LinearGradient(
-    colors: [topColorStart, topColorEnd],
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -44,20 +26,10 @@ class ScanPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.white, // Page background
-
       // Main body stack to overlay header, cards, and list
       body: Stack(
         children: [
-          // Top gradient header
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: kTopHeaderHeight,
-            child: Container(
-              decoration: const BoxDecoration(gradient: kGreenGradient),
-            ),
-          ),
+          GreenHeaderBackground(height: ScanConstants.kTopHeaderHeight),
 
           // Top title text
           Positioned(
@@ -87,29 +59,31 @@ class ScanPage extends StatelessWidget {
 
           // Main container below header
           Positioned.fill(
-            top: kTopHeaderHeight - kContainerOverlap,
+            top: ScanConstants.kTopHeaderHeight - ScanConstants.kContainerOverlap,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(kTopRadius),
-                  bottom: Radius.circular(kBottomRadius),
+                  top: Radius.circular(ScanConstants.kTopRadius),
+                  bottom: Radius.circular(ScanConstants.kBottomRadius),
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(height: kCardAreaHeight + kButtonAreaHeight),
+                  SizedBox(
+                      height: ScanConstants.kCardAreaHeight +
+                          ScanConstants.kButtonAreaHeight),
 
                   // Scrollable list of scans
                   Expanded(
                     child: ListView.separated(
                       itemCount: severityData.length,
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         16,
                         0,
                         16,
-                        kBottomRadius + 16,
+                        ScanConstants.kBottomRadius + 16,
                       ),
 
                       // Build each scan item
@@ -147,7 +121,7 @@ class ScanPage extends StatelessWidget {
 
           // Summary cards row (Total, Healthy, Infected)
           Positioned(
-            top: kTopHeaderHeight - kCardOverlapHeight,
+            top: ScanConstants.kTopHeaderHeight - ScanConstants.kCardOverlapHeight,
             left: 0,
             right: 0,
             child: Padding(
@@ -179,7 +153,9 @@ class ScanPage extends StatelessWidget {
 
           // Filter and Sort buttons
           Positioned(
-            top: kTopHeaderHeight - kCardOverlapHeight + kCardAreaHeight,
+            top: ScanConstants.kTopHeaderHeight -
+                ScanConstants.kCardOverlapHeight +
+                ScanConstants.kCardAreaHeight,
             left: 0,
             right: 0,
             child: Padding(
@@ -239,10 +215,7 @@ class ScanPage extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 12, 
-                  color: Colors.grey[600]
-                ),
+                style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
           ),
@@ -264,7 +237,7 @@ class ScanPage extends StatelessWidget {
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500), 
+        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
       ),
       onPressed: () {},
       icon: Icon(icon, color: Colors.white),
@@ -357,7 +330,7 @@ class ScanPage extends StatelessWidget {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: primaryColor.withValues(alpha: 0.2),
+                          color: primaryColor.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -373,8 +346,8 @@ class ScanPage extends StatelessWidget {
                       Text(
                         date,
                         style: GoogleFonts.inter(
-                          fontSize: 12, 
-                          color: Colors.grey[500]
+                          fontSize: 12,
+                          color: Colors.grey[500],
                         ),
                       ),
                     ],
@@ -397,8 +370,8 @@ class ScanPage extends StatelessWidget {
                   Text(
                     'This leaf scan was performed on a young mango tree located in Zone B, Section 3.',
                     style: GoogleFonts.inter(
-                      fontSize: 12, 
-                      color: Colors.black54
+                      fontSize: 12,
+                      color: Colors.black54,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
