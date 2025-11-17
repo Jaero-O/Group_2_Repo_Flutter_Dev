@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'my_trees_page.dart';
 import 'photos_view.dart';
+import 'gallery_selection_widgets.dart'; 
+import 'gallery_dialogs.dart'; 
 
 /// Page for viewing photos, albums, and optionally selecting images.
-/// Supports two modes:
-/// - Normal browsing: viewing photos and albums
-/// - Selection mode: selecting images for creating datasets or albums
 class GalleryPage extends StatefulWidget {
   /// If true, page is in selection mode for picking images
   final bool isSelectionMode;
@@ -61,6 +60,16 @@ class _GalleryPageState extends State<GalleryPage> {
     if (widget.isSelectionMode && widget.initialMode == null) {
       isPhotosView = true;
     }
+
+    // Initialize with a placeholder album if empty to ensure MyTreesPage displays something
+    if (myTreesAlbums.isEmpty) {
+      myTreesAlbums.add({
+        'title': 'Sample Album',
+        'location': 'Backyard',
+        'images': List<String>.generate(15, (i) => 'sample_album_photo_$i'),
+        'cover_image': 'images/leaf.png',
+      });
+    }
   }
 
   /// Returns the AppBar title based on current mode and selection
@@ -92,11 +101,14 @@ class _GalleryPageState extends State<GalleryPage> {
   void _toggleSelectAll() {
     setState(() {
       final currentImageIds = _getCurrentImageIds();
+      // Ensure we only check images in the current view
       final allSelected = currentImageIds.every(selectedImages.contains);
 
       if (allSelected) {
+        // Only remove images that are currently in view
         selectedImages.removeWhere(currentImageIds.contains);
       } else {
+        // Add all images currently in view
         for (var id in currentImageIds) {
           if (!selectedImages.contains(id)) {
             selectedImages.add(id);
@@ -117,8 +129,21 @@ class _GalleryPageState extends State<GalleryPage> {
         selectedAlbumTitle = null;
       });
     } else {
+      // In selection mode, if going back from main selection screen, pop with empty list
       Navigator.pop(context, <String>[]);
     }
+  }
+
+  /// Callback used by GalleryDialogs to update album list after creation
+  void _handleAlbumCreation(String albumName, List<String> selectedImageIds) {
+    setState(() {
+      myTreesAlbums.add({
+        'title': albumName,
+        'images': selectedImageIds,
+        'location': 'New Album Location',
+        'cover_image': 'images/leaf.png',
+      });
+    });
   }
 
   /// Builds the main body content depending on mode
@@ -136,6 +161,7 @@ class _GalleryPageState extends State<GalleryPage> {
       final contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
       final allImageIds = _getCurrentImageIds();
 
+      // Uses PhotosSelectionGrid from gallery_selection_widgets.dart
       return PhotosSelectionGrid(
         contentKey: contentKey,
         allImageIds: allImageIds,
@@ -151,109 +177,6 @@ class _GalleryPageState extends State<GalleryPage> {
             selectedAlbumTitle = title;
           });
         },
-      );
-    }
-  }
-
-  /// Shows a dialog to create a new album
-
-  void _showCreateAlbumDialog() {
-    String newAlbum = '';
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          contentPadding: const EdgeInsets.fromLTRB(
-            24,
-            20,
-            24,
-            10,
-          ), // Example: Adjusted top/bottom padding
-          // 2. SHAPE (Controls the roundness of the corners)
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              16,
-            ), // Increased roundness from default (usually 4.0)
-          ),
-          title: Text(
-            'Create New Album',
-            // Applying Inter font to the title
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          content: TextField(
-            onChanged: (value) => newAlbum = value,
-            decoration: InputDecoration(
-              hintText: 'Enter album name',
-              // Applying Inter font to the hint text
-              hintStyle: GoogleFonts.inter(),
-            ),
-          ),
-          actionsPadding: const EdgeInsets.symmetric(
-            horizontal: 5,
-            vertical: 8,
-          ),
-          actions: [
-            // This TextButton is usually left-aligned within the actions group by default
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(
-                  color: Colors.black54,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-
-            // ADD SPACE HERE
-            const SizedBox(
-              width: 2,
-            ), // Adjust this value (e.g., 20) to change the gap
-
-            TextButton(
-              onPressed: () {
-                if (newAlbum.trim().isEmpty) return;
-                Navigator.pop(context);
-                _navigateToSelectionForAlbum(newAlbum.trim());
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.green),
-              child: Text(
-                'Next',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Opens selection page to add images to a new album
-  void _navigateToSelectionForAlbum(String albumName) async {
-    final selectedImageIds = await Navigator.push<List<String>>(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            GalleryPage(isSelectionMode: true, initialMode: null),
-      ),
-    );
-
-    if (selectedImageIds != null && selectedImageIds.isNotEmpty) {
-      setState(() {
-        myTreesAlbums.add({
-          'title': albumName,
-          'images': selectedImageIds,
-          'location': 'New Album Location',
-          'cover_image': 'images/leaf.png',
-        });
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Album "$albumName" created with ${selectedImageIds.length} photos!',
-          ),
-        ),
       );
     }
   }
@@ -369,7 +292,10 @@ class _GalleryPageState extends State<GalleryPage> {
               ]
             : null,
       ),
-      body: Stack(children: [_buildBodyContent(), _buildSelectedCountChip()]),
+      body: Stack(children: [
+        _buildBodyContent(),
+        _buildSelectedCountChip()
+      ]),
       bottomNavigationBar: widget.isSelectionMode
           ? Padding(
               padding: const EdgeInsets.all(16),
@@ -419,85 +345,12 @@ class _GalleryPageState extends State<GalleryPage> {
       floatingActionButton: !widget.isSelectionMode && !isPhotosView
           ? FloatingActionButton(
               backgroundColor: Colors.green,
-              onPressed: _showCreateAlbumDialog,
+              // Call the extracted static dialog method
+              onPressed: () => GalleryDialogs.showCreateAlbumDialog(
+                  context, _handleAlbumCreation),
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-    );
-  }
-}
-
-/// Grid widget for selecting photos in selection mode
-class PhotosSelectionGrid extends StatelessWidget {
-  /// Key representing current content (AllPhotos or album name)
-  final String contentKey;
-
-  /// List of all image IDs in the current view
-  final List<String> allImageIds;
-
-  /// Currently selected images
-  final List<String> selectedImages;
-
-  /// Callback for toggling selection of an image
-  final ValueChanged<String> onToggleSelection;
-
-  const PhotosSelectionGrid({
-    super.key,
-    required this.contentKey,
-    required this.allImageIds,
-    required this.selectedImages,
-    required this.onToggleSelection,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final itemCount = allImageIds.length;
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        final imageId = allImageIds[index];
-        final selected = selectedImages.contains(imageId);
-
-        return GestureDetector(
-          onTap: () => onToggleSelection(imageId),
-          child: Container(
-            decoration: BoxDecoration(
-              color: selected ? Colors.green[200] : Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: selected ? Colors.green : Colors.transparent,
-                width: 2,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                const Icon(Icons.photo, size: 40, color: Colors.grey),
-                if (selected)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.green.withAlpha(127),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.check_circle,
-                      size: 30,
-                      color: Colors.white,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

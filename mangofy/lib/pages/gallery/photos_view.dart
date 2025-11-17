@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
+import 'photo_widgets.dart';
 
 // Widget that displays a grid or list of photos depending on the view mode.
-// Supports four view modes:
-// - "All Photos": simple grid of 40 placeholder images
-// - "Years": grouped by year -> month -> photo grid
-// - "Months": grouped by month -> photo grid
-// - "Days": grouped by day -> photo grid
+// Supports four view modes: 'All Photos', 'Years', 'Months', or 'Days'.
 class PhotoGridContent extends StatelessWidget {
   /// Current view mode: 'All Photos', 'Years', 'Months', or 'Days'
   final String viewMode;
@@ -19,27 +16,15 @@ class PhotoGridContent extends StatelessWidget {
   Widget build(BuildContext context) {
     // Display a simple 4-column grid for "All Photos"
     if (viewMode == 'All Photos') {
-      return GridView.builder(
-        padding: const EdgeInsets.all(4),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          crossAxisSpacing: 4,
-          mainAxisSpacing: 4,
-        ),
+      // Use the reusable PhotoGridPlaceholder
+      return const PhotoGridPlaceholder(
         itemCount: 40,
-        itemBuilder: (context, index) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Icon(
-              Icons.image,
-              color: Colors.grey,
-              size: 40,
-            ),
-          );
-        },
+        crossAxisCount: 4,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 4,
+        padding: EdgeInsets.all(4),
+        borderRadius: 4, 
+        iconSize: 40,
       );
     } else {
       // For grouped views: Years, Months, or Days
@@ -52,7 +37,6 @@ class PhotoGridContent extends StatelessWidget {
 
   // Builds sections for the grouped views (Years, Months, Days)
   List<Widget> _buildGroupedSections() {
-    // Sample structured data: year -> month -> days
     final yearData = {
       '2025': {
         'December': ['01', '02', '05'],
@@ -65,7 +49,6 @@ class PhotoGridContent extends StatelessWidget {
 
     yearData.forEach((year, months) {
       if (viewMode == 'Years') {
-        // Year heading
         sections.add(
           Padding(
             padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
@@ -75,7 +58,6 @@ class PhotoGridContent extends StatelessWidget {
             ),
           ),
         );
-        // Month headings with photo grids
         months.forEach((month, days) {
           sections.add(
             Padding(
@@ -96,7 +78,6 @@ class PhotoGridContent extends StatelessWidget {
           );
         });
       } else if (viewMode == 'Months') {
-        // Month headings with year, then photo grids
         months.forEach((month, days) {
           sections.add(
             Padding(
@@ -117,7 +98,6 @@ class PhotoGridContent extends StatelessWidget {
           );
         });
       } else if (viewMode == 'Days') {
-        // Day-level sections with photo grids
         months.forEach((month, days) {
           for (var day in days) {
             sections.add(
@@ -147,28 +127,16 @@ class PhotoGridContent extends StatelessWidget {
 
   // Helper method to build a placeholder photo grid of [count] items
   Widget _buildPhotoGrid(int count) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(), // allow parent ListView scrolling
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-      ),
+    // Use the reusable PhotoGridPlaceholder
+    return PhotoGridPlaceholder(
       itemCount: count,
-      itemBuilder: (context, index) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(
-            Icons.photo,
-            color: Colors.grey,
-            size: 40,
-          ),
-        );
-      },
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 4,
+      crossAxisSpacing: 4,
+      mainAxisSpacing: 4,
+      borderRadius: 8,
+      iconSize: 40,
     );
   }
 }
