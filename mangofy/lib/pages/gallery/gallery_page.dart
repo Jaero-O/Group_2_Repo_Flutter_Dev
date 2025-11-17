@@ -156,30 +156,71 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   /// Shows a dialog to create a new album
+
   void _showCreateAlbumDialog() {
     String newAlbum = '';
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Create New Album'),
+          contentPadding: const EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            10,
+          ), // Example: Adjusted top/bottom padding
+          // 2. SHAPE (Controls the roundness of the corners)
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(
+              16,
+            ), // Increased roundness from default (usually 4.0)
+          ),
+          title: Text(
+            'Create New Album',
+            // Applying Inter font to the title
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
           content: TextField(
             onChanged: (value) => newAlbum = value,
-            decoration: const InputDecoration(hintText: 'Enter album name'),
+            decoration: InputDecoration(
+              hintText: 'Enter album name',
+              // Applying Inter font to the hint text
+              hintStyle: GoogleFonts.inter(),
+            ),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(
+            horizontal: 5,
+            vertical: 8,
           ),
           actions: [
+            // This TextButton is usually left-aligned within the actions group by default
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-            ElevatedButton(
+
+            // ADD SPACE HERE
+            const SizedBox(
+              width: 2,
+            ), // Adjust this value (e.g., 20) to change the gap
+
+            TextButton(
               onPressed: () {
                 if (newAlbum.trim().isEmpty) return;
                 Navigator.pop(context);
                 _navigateToSelectionForAlbum(newAlbum.trim());
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text('Next'),
+              style: TextButton.styleFrom(foregroundColor: Colors.green),
+              child: Text(
+                'Next',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         );
@@ -335,30 +376,41 @@ class _GalleryPageState extends State<GalleryPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  OutlinedButton(
+                  TextButton(
                     onPressed: _handleBackButton,
-                    style: OutlinedButton.styleFrom(
+                    style: TextButton.styleFrom(
                       foregroundColor: Colors.green,
-                      side: const BorderSide(color: Colors.green),
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.centerLeft,
                     ),
-                    child: Text(
-                      (!isPhotosView && selectedAlbumTitle != null)
-                          ? 'Back to Albums'
-                          : 'Cancel',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.chevron_left, size: 24),
+                        Text(
+                          (!isPhotosView && selectedAlbumTitle != null)
+                              ? 'Back to Albums'
+                              : 'Back',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
                   ),
-                  ElevatedButton(
+                  TextButton.icon(
                     onPressed: selectedImages.isEmpty
                         ? null
                         : () => widget.onSelectionDone != null
-                              ? widget.onSelectionDone!(
-                                  selectedImages,
-                                )
+                              ? widget.onSelectionDone!(selectedImages)
                               : Navigator.pop(context, selectedImages),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
                     ),
-                    child: Text('Save (${selectedImages.length})'),
+                    icon: const Icon(Icons.save),
+                    label: Text('Save (${selectedImages.length})'),
                   ),
                 ],
               ),
