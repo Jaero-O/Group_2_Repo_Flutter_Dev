@@ -2,36 +2,106 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'scan_details_page.dart';
 import '../../ui/green_header_background.dart';
-import 'scan_constants.dart'; // New Import
+import 'scan_constants.dart';
+import '../../services/database_service.dart';
+import '../../model/scan_model.dart';
 
-/// ScanPage displays a history of leaf scans.
-class ScanPage extends StatelessWidget {
+// Displays history of leaf scans, fetching data from the database.
+class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
 
   @override
+  State<ScanPage> createState() => _ScanPageState();
+}
+
+class _ScanPageState extends State<ScanPage> {
+  // State variables
+  List<ScanRecord> _scanHistory = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _seedDummyDataIfEmpty();
+  }
+
+  // Helper to determine status based on severity value
+  String _getStatusFromValue(double value) {
+    if (value > 40.0) {
+      return 'Severe';
+    } else if (value > 5.0) {
+      return 'Moderate';
+    } else {
+      return 'Healthy';
+    }
+  }
+
+  // Seeds dummy data if the database is empty, then loads the history.
+  Future<void> _seedDummyDataIfEmpty() async {
+    final dbRecords = await DatabaseService.instance.getAllScans();
+    if (dbRecords.isEmpty) {
+      final List<Map<String, dynamic>> dummyData = [
+        {'value': 0.1, 'disease': 'Healthy', 'date': 'Dec 20, 2025'},
+        {'value': 50.1, 'disease': 'Anthracnose', 'date': 'Dec 19, 2025'},
+        {'value': 89.2, 'disease': 'Anthracnose', 'date': 'Dec 18, 2025'},
+        {'value': 4.5, 'disease': 'Healthy', 'date': 'Dec 17, 2025'},
+        {'value': 25.8, 'disease': 'Anthracnose', 'date': 'Dec 16, 2025'},
+        {'value': 95.0, 'disease': 'Anthracnose', 'date': 'Dec 15, 2025'},
+        {'value': 1.2, 'disease': 'Healthy', 'date': 'Dec 14, 2025'},
+        {'value': 62.3, 'disease': 'Anthracnose', 'date': 'Dec 13, 2025'},
+        {'value': 15.0, 'disease': 'Anthracnose', 'date': 'Dec 12, 2025'},
+      ];
+
+      for (var data in dummyData) {
+        // FIX: Cast to 'num' first, then call .toDouble() to safely convert
+        // both int (45) and double values to double.
+        final double severityValue = (data['value'] as num).toDouble();
+        final String status = _getStatusFromValue(severityValue);
+
+        await DatabaseService.instance.insertScan(
+          disease: data['disease'] as String,
+          severityValue: severityValue,
+          status: status,
+          date: data['date'] as String,
+        );
+      }
+    }
+    _loadScanHistory();
+  }
+
+  // Loads all scan records from the database.
+  Future<void> _loadScanHistory() async {
+    final dbRecords = await DatabaseService.instance.getAllScans();
+
+    final List<ScanRecord> history = dbRecords
+        .map((map) => ScanRecord.fromMap(map))
+        .toList();
+
+    if (mounted) {
+      setState(() {
+        _scanHistory = history;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Sample severity data for list items
-    final List<Map<String, Object>> severityData = List.generate(
-      20,
-      (index) => [
-        {'value': '0.1', 'label': 'Healthy', 'color': const Color(0xFF4CAF50)},
-        {
-          'value': '50.1',
-          'label': 'Moderate',
-          'color': const Color(0xFFF2DA00),
-        },
-        {'value': '89.2', 'label': 'Severe', 'color': const Color(0xFFF44336)},
-      ][index % 3],
-    );
+    // Calculate Summary Stats
+    final int totalScans = _scanHistory.length;
+    // Count items where status is explicitly 'Healthy'
+    final int healthyScans = _scanHistory
+        .where((record) => record.status == 'Healthy')
+        .length;
+    // Infected is everything else (Moderate + Severe)
+    final int infectedScans = totalScans - healthyScans;
 
     return Scaffold(
-      backgroundColor: Colors.white, // Page background
-      // Main body stack to overlay header, cards, and list
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           GreenHeaderBackground(height: ScanConstants.kTopHeaderHeight),
 
-          // Top title text
           Positioned(
             top: 25,
             left: 16,
@@ -57,9 +127,10 @@ class ScanPage extends StatelessWidget {
             ),
           ),
 
-          // Main container below header
           Positioned.fill(
-            top: ScanConstants.kTopHeaderHeight - ScanConstants.kContainerOverlap,
+            top:
+                ScanConstants.kTopHeaderHeight -
+                ScanConstants.kContainerOverlap,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
@@ -72,47 +143,53 @@ class ScanPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                      height: ScanConstants.kCardAreaHeight +
-                          ScanConstants.kButtonAreaHeight),
+                    height:
+                        ScanConstants.kCardAreaHeight +
+                        ScanConstants.kButtonAreaHeight,
+                  ),
 
                   // Scrollable list of scans
                   Expanded(
-                    child: ListView.separated(
-                      itemCount: severityData.length,
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        0,
-                        16,
-                        ScanConstants.kBottomRadius + 16,
-                      ),
-
-                      // Build each scan item
-                      itemBuilder: (context, index) {
-                        final item = severityData[index];
-                        return _buildScanHistoryItem(
-                          context,
-                          severityValue: item['value'] as String,
-                          status: item['label'] as String,
-                          primaryColor: item['color'] as Color,
-                          disease: item['label'] as String != 'Healthy'
-                              ? 'Anthracnose'
-                              : 'Healthy',
-                          date: 'Dec ${20 - index}, 2025',
-                          index: index,
-                        );
-                      },
-
-                      // Divider between items
-                      separatorBuilder: (context, index) {
-                        return const Divider(
-                          color: Color(0xFFEEEEEE),
-                          height: 1.0,
-                          thickness: 1.0,
-                          indent: 0,
-                          endIndent: 0,
-                        );
-                      },
-                    ),
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _scanHistory.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No scan history found.',
+                              style: GoogleFonts.inter(color: Colors.grey[500]),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: _scanHistory.length,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              0,
+                              16,
+                              ScanConstants.kBottomRadius + 16,
+                            ),
+                            itemBuilder: (context, index) {
+                              final item = _scanHistory[index];
+                              return _buildScanHistoryItem(
+                                context,
+                                severityValue: item.severityValue
+                                    .toStringAsFixed(1),
+                                status: item.status,
+                                primaryColor: item.primaryColor,
+                                disease: item.disease,
+                                date: item.date,
+                                index: index,
+                              );
+                            },
+                            separatorBuilder: (context, index) {
+                              return const Divider(
+                                color: Color(0xFFEEEEEE),
+                                height: 1.0,
+                                thickness: 1.0,
+                                indent: 0,
+                                endIndent: 0,
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
@@ -121,7 +198,9 @@ class ScanPage extends StatelessWidget {
 
           // Summary cards row (Total, Healthy, Infected)
           Positioned(
-            top: ScanConstants.kTopHeaderHeight - ScanConstants.kCardOverlapHeight,
+            top:
+                ScanConstants.kTopHeaderHeight -
+                ScanConstants.kCardOverlapHeight,
             left: 0,
             right: 0,
             child: Padding(
@@ -131,19 +210,19 @@ class ScanPage extends StatelessWidget {
                 children: [
                   _buildSummaryCard(
                     title: 'Total Scans',
-                    value: '120',
+                    value: totalScans.toString(),
                     diseaseName: null,
                   ),
                   const SizedBox(width: 8),
                   _buildSummaryCard(
                     title: 'Healthy',
-                    value: '95',
+                    value: healthyScans.toString(),
                     diseaseName: null,
                   ),
                   const SizedBox(width: 8),
                   _buildSummaryCard(
                     title: 'Infected',
-                    value: '25',
+                    value: infectedScans.toString(),
                     diseaseName: 'Anthracnose',
                   ),
                 ],
@@ -153,7 +232,8 @@ class ScanPage extends StatelessWidget {
 
           // Filter and Sort buttons
           Positioned(
-            top: ScanConstants.kTopHeaderHeight -
+            top:
+                ScanConstants.kTopHeaderHeight -
                 ScanConstants.kCardOverlapHeight +
                 ScanConstants.kCardAreaHeight,
             left: 0,
@@ -184,7 +264,6 @@ class ScanPage extends StatelessWidget {
     );
   }
 
-  // Build a single summary card
   Widget _buildSummaryCard({
     required String title,
     required String value,
@@ -201,7 +280,6 @@ class ScanPage extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
           child: Column(
             children: [
-              // Value text
               Text(
                 value,
                 style: GoogleFonts.inter(
@@ -211,7 +289,6 @@ class ScanPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              // Title text
               Text(
                 title,
                 textAlign: TextAlign.center,
@@ -224,7 +301,6 @@ class ScanPage extends StatelessWidget {
     );
   }
 
-  // Build a filter or sort button
   Widget _buildFilterButton(
     String label,
     IconData icon, {
@@ -239,13 +315,14 @@ class ScanPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
       ),
-      onPressed: () {},
+      onPressed: () {
+        // Placeholder onPressed action
+      },
       icon: Icon(icon, color: Colors.white),
       label: Text(label),
     );
   }
 
-  // Build a single scan history item
   Widget _buildScanHistoryItem(
     BuildContext context, {
     required String severityValue,
@@ -256,7 +333,6 @@ class ScanPage extends StatelessWidget {
     required int index,
   }) {
     return GestureDetector(
-      // Navigate to ScanDetailsPage on tap
       onTap: () {
         Navigator.push(
           context,
@@ -280,7 +356,6 @@ class ScanPage extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Severity box on the left
             Container(
               width: 100,
               height: 80,
@@ -313,17 +388,14 @@ class ScanPage extends StatelessWidget {
             ),
             const SizedBox(width: 12),
 
-            // Scan info on the right
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Status tag and date
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Status tag
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -342,7 +414,6 @@ class ScanPage extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Scan date
                       Text(
                         date,
                         style: GoogleFonts.inter(
@@ -354,10 +425,9 @@ class ScanPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
 
-                  // Disease text
                   Text(
-                    disease == 'No Disease Detected'
-                        ? disease
+                    disease.toLowerCase() == 'healthy'
+                        ? 'No Disease Detected'
                         : '$disease Detected',
                     style: GoogleFonts.inter(
                       fontSize: 14,
@@ -366,7 +436,6 @@ class ScanPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
 
-                  // Description snippet
                   Text(
                     'This leaf scan was performed on a young mango tree located in Zone B, Section 3.',
                     style: GoogleFonts.inter(

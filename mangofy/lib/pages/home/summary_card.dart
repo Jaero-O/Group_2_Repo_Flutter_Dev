@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/database_service.dart';
 
 class SummaryCard extends StatelessWidget {
-  const SummaryCard({super.key});
+  final ScanSummary summary; 
+
+  // Update constructor to require the summary data
+  const SummaryCard({super.key, required this.summary});
 
   @override
   Widget build(BuildContext context) {
+    // Calculate diseased leaves count
+    final int diseasedLeaves = summary.moderateCount + summary.severeCount;
+
     return Card(
       // Card elevation and rounded corners
       elevation: 4,
@@ -28,7 +35,7 @@ class SummaryCard extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            // Main content: statistics text
+            // Statistics text
             Padding(
               padding: const EdgeInsets.only(
                 left: 30,
@@ -44,9 +51,9 @@ class SummaryCard extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Total leaves scanned
+                      // Total leaves scanned 
                       Text(
-                        '26',
+                        summary.totalScans.toString(), 
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -64,9 +71,9 @@ class SummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // Healthy leaves
+                      // Healthy leaves 
                       Text(
-                        '1,999',
+                        summary.healthyCount.toString(), 
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -84,9 +91,9 @@ class SummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // Diseased leaves
+                      // Diseased leaves 
                       Text(
-                        '1,999',
+                        diseasedLeaves.toString(), 
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -108,7 +115,6 @@ class SummaryCard extends StatelessWidget {
               ),
             ),
 
-            // Positioned image of mango leaves at bottom-right
             Positioned(
               bottom: 0,
               right: 0,
