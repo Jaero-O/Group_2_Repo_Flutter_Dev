@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../gallery/gallery_page.dart';
 import 'dataset_widgets.dart';
+import '../gallery/gallery_page.dart';
 
 /// Type definition for the callback when a folder is created.
 typedef FolderCreationCallback =
@@ -63,9 +63,18 @@ class DatasetDialogs {
                 ],
               ),
               const SizedBox(height: 30),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: TextButton(
+            ],
+          ),
+          actionsPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+          actions: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                TextButton(
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF393939),
@@ -75,9 +84,10 @@ class DatasetDialogs {
                     style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 5), 
+              ],
+            ),
+          ],
         );
       },
     );
@@ -86,61 +96,123 @@ class DatasetDialogs {
   /// Shows a dialog for entering the new folder name
   static Future<String?> _showFolderNameDialog(BuildContext context) async {
     String folderName = '';
+    // Controller to manage the TextField content
+    final TextEditingController controller = TextEditingController();
+
     return showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          // Set contentPadding to ensure minimal bottom space after the content items.
+          contentPadding: const EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            8,
+          ),
+          actionsPadding: EdgeInsets.zero, 
+          actions: [], 
           title: Text(
-            'Enter Folder Name',
+            'Create new dataset',
             style: GoogleFonts.inter(fontWeight: FontWeight.w600),
           ),
-          content: TextField(
-            autofocus: true,
-            onChanged: (val) => folderName = val,
-            decoration: InputDecoration(
-              labelText: 'Folder Name',
-              border: const OutlineInputBorder(),
-              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, null),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Set name of the dataset',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (folderName.trim().isNotEmpty) {
-                  Navigator.pop(dialogContext, folderName.trim());
-                } else {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Folder name cannot be empty'),
+              const SizedBox(height: 12),
+
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD9D9D9),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 2,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: const SvgFolderIcon(size: 90),
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              TextField(
+                controller: controller,
+                autofocus: true,
+                onChanged: (val) => folderName = val,
+                decoration: InputDecoration(
+                  hintText: 'e.g., My Mango Farm',
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, null),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.inter(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  );
-                }
-              },
-              child: Text(
-                'Create',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      if (folderName.trim().isNotEmpty) {
+                        Navigator.pop(dialogContext, folderName.trim());
+                      } else {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(
+                            content: Text('Folder name cannot be empty'),
+                          ),
+                        );
+                      }
+                    },
+                    style: TextButton.styleFrom(foregroundColor: Colors.black54),
+                    child: Text(
+                      'Save',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
   }
 
-  /// Navigates to the gallery selection page and handles folder creation
+  // Navigates to the gallery selection page and handles folder creation
   static void _navigateToSelection(
     BuildContext parentContext,
     String? initialMode,
     FolderCreationCallback onFolderCreated,
   ) async {
-    Navigator.pop(parentContext); // Close the selection dialog
+    Navigator.pop(parentContext); 
 
     // GalleryPage accepts 'isSelectionMode: true' and 'initialMode'
     final selected = await Navigator.push<List<String>>(
@@ -166,7 +238,7 @@ class DatasetDialogs {
     }
   }
 
-  /// Builds an individual folder choice card in the creation dialog
+  // Builds an individual folder choice card in the creation dialog
   static Widget _buildFolderChoice({
     required SvgFolderIcon svgIcon,
     required String label,
