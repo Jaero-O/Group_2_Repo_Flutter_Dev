@@ -1,19 +1,23 @@
+// gallery_page.dart (Modified)
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'my_trees_page.dart';
 import 'photos_view.dart';
 import 'gallery_selection_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
+import '../../services/database_service.dart';
+import '../../model/my_tree_model.dart'; 
 
-/// Page for viewing photos, albums, and optionally selecting images.
+// Page for viewing photos, albums, and optionally selecting images.
 class GalleryPage extends StatefulWidget {
-  /// If true, page is in selection mode for picking images
+  // If true, page is in selection mode for picking images
   final bool isSelectionMode;
 
-  /// Initial view mode: 'My Trees' or null
+  // Initial view mode: 'My Trees' or null
   final String? initialMode;
 
-  /// Callback when selection is done (returns list of selected image IDs)
+  // Callback when selection is done (returns list of selected image IDs)
   final Function(List<String>)? onSelectionDone;
 
   const GalleryPage({
@@ -28,19 +32,27 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> {
-  /// True if displaying photos; false if displaying albums ('My Trees')
+  // True if displaying photos; false if displaying albums ('My Trees')
   bool isPhotosView = true;
 
-  /// List of selected image IDs in selection mode
+  // List of selected image IDs in selection mode
   final List<String> selectedImages = [];
 
-  /// Album currently selected in selection mode
+  // Album currently selected in selection mode
   String? selectedAlbumTitle;
 
   /// List of user's albums for 'My Trees'
-  List<Map<String, dynamic>> myTreesAlbums = [];
+  List<MyTree> myTreesAlbums = [];
 
-  /// Generates a list of current image IDs based on view
+  // Method to load My Trees from the database
+  Future<void> _loadMyTreesFromDb() async {
+    final myTrees = await DatabaseService.instance.getAllMyTrees(); 
+    setState(() {
+      myTreesAlbums = myTrees;
+    });
+  }
+  
+  // Generates a list of current image IDs based on view
   List<String> _getCurrentImageIds() {
     final String contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
     final int itemCount = contentKey == 'AllPhotos' ? 40 : 15;
@@ -61,18 +73,9 @@ class _GalleryPageState extends State<GalleryPage> {
       isPhotosView = true;
     }
 
-    // Initialize with a placeholder album if empty to ensure MyTreesPage displays something
-    if (myTreesAlbums.isEmpty) {
-      myTreesAlbums.add({
-        'title': 'Sample Album',
-        'location': 'Backyard',
-        'images': List<String>.generate(15, (i) => 'sample_album_photo_$i'),
-        'cover_image': 'images/leaf.png',
-      });
-    }
+    _loadMyTreesFromDb();
   }
 
-  /// Returns the AppBar title based on current mode and selection
   String _getAppBarTitle() {
     if (!widget.isSelectionMode) {
       return isPhotosView ? 'Gallery' : 'My Trees';
@@ -88,7 +91,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
-  /// Toggles selection state of a single image
+  // Toggles selection state of a single image
   void _toggleSelection(String id) {
     setState(() {
       selectedImages.contains(id)
@@ -97,7 +100,7 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
-  /// Selects or deselects all images currently displayed
+  // Selects or deselects all images currently displayed
   void _toggleSelectAll() {
     setState(() {
       final currentImageIds = _getCurrentImageIds();
@@ -118,7 +121,7 @@ class _GalleryPageState extends State<GalleryPage> {
     });
   }
 
-  /// Handles back button behavior based on mode
+  // Handles back button behavior based on mode
   void _handleBackButton() {
     if (!widget.isSelectionMode) {
       Navigator.pop(context);
@@ -135,18 +138,18 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   /// Callback used by GalleryDialogs to update album list after creation
-  void _handleAlbumCreation(String albumName, List<String> selectedImageIds) {
-    setState(() {
-      myTreesAlbums.add({
-        'title': albumName,
-        'images': selectedImageIds,
-        'location': 'New Album Location',
-        'cover_image': 'images/leaf.png',
-      });
-    });
+  void _handleAlbumCreation(String albumName, List<String> selectedImageIds) async {
+    await DatabaseService.instance.insertMyTree( 
+      title: albumName,
+      location: 'New Album Location', 
+      imageIds: selectedImageIds,
+    );
+    
+    await _loadMyTreesFromDb();
   }
 
-  /// Builds the main body content depending on mode
+
+  // Builds the main body content depending on mode
   Widget _buildBodyContent() {
     final bool isPhotoSelectionScreen =
         widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
@@ -154,14 +157,13 @@ class _GalleryPageState extends State<GalleryPage> {
     if (!widget.isSelectionMode) {
       return isPhotosView
           ? const PhotosView()
-          : MyTreesPage(albums: myTreesAlbums);
+          : MyTreesPage(albums: myTreesAlbums); 
     }
 
     if (isPhotoSelectionScreen) {
       final contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
       final allImageIds = _getCurrentImageIds();
 
-      // Uses PhotosSelectionGrid from gallery_selection_widgets.dart
       return PhotosSelectionGrid(
         contentKey: contentKey,
         allImageIds: allImageIds,
@@ -170,7 +172,7 @@ class _GalleryPageState extends State<GalleryPage> {
       );
     } else {
       return MyTreesPage(
-        albums: myTreesAlbums,
+        albums: myTreesAlbums, 
         isSelectionMode: true,
         onAlbumSelected: (title) {
           setState(() {
@@ -181,7 +183,7 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
-  /// Displays a small chip showing the count of selected images
+  // Displays a small chip showing the count of selected images
   Widget _buildSelectedCountChip() {
     if (!widget.isSelectionMode || selectedImages.isEmpty) {
       return const SizedBox.shrink();
