@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// A reusable widget to display an SVG folder icon.
-///
-/// [size] defines the width and height of the icon.
-/// [assetPath] defines the path of the SVG asset.
+// SVG folder icon.
 class SvgFolderIcon extends StatelessWidget {
   final double size;
   final String assetPath;
@@ -21,7 +18,7 @@ class SvgFolderIcon extends StatelessWidget {
   }
 }
 
-/// FolderViewPage – shows images inside the selected folder
+// Shows images inside the selected folder
 class FolderViewPage extends StatelessWidget {
   final String folderName;
   final List<dynamic> images;
@@ -35,23 +32,40 @@ class FolderViewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
+
       appBar: AppBar(
-        title: Text(folderName),
-        backgroundColor: Colors.green,
-      ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
+        title: Text(
+          folderName,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+          ),
         ),
+        backgroundColor: Colors.white, 
+        iconTheme: const IconThemeData(color: Colors.green), 
+        elevation: 0, 
+      ),
+      
+      // Grid displaying folder photos 
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16), 
+
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, // 3 columns
+          crossAxisSpacing: 6, // Horizontal spacing 
+          mainAxisSpacing: 6, // Vertical spacing 
+        ),
+        
         itemCount: images.length,
         itemBuilder: (context, index) {
           final img = images[index];
 
           return Container(
-            color: Colors.green.shade100,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8), 
+            ),
             child: Center(
               child: Text(
                 img.toString(),
