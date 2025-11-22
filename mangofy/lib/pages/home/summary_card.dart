@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../services/database_service.dart';
+import '../../model/scan_summary_model.dart';
 
 class SummaryCard extends StatelessWidget {
   final ScanSummary summary; 

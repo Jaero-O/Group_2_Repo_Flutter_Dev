@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../services/database_service.dart'; 
+import '../../model/scan_summary_model.dart';
 
 const healthyGradient = LinearGradient(
   colors: [Color(0xFF85D133), Color(0xFF06850C)],

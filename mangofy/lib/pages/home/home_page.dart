@@ -3,6 +3,7 @@ import 'summary_card.dart';
 import 'recommended_actions_card.dart';
 import 'severity_distributions_card.dart';
 import '../../services/database_service.dart'; 
+import '../../model/scan_summary_model.dart';
 
 // Main home page of the app displaying the dashboard overview.
 class HomePage extends StatelessWidget {
