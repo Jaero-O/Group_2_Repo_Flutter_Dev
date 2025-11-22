@@ -14,10 +14,18 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
+enum SortOption { dateNewest, dateOldest, severityHigh, severityLow }
+enum FilterOption { all, healthy, moderate, severe }
+
 class _ScanPageState extends State<ScanPage> {
   // State variables
   List<ScanRecord> _scanHistory = [];
+  List<ScanRecord> _displayScanHistory = []; // The list shown to the user
   bool _isLoading = true;
+
+  // Sort and Filter state
+  SortOption _currentSort = SortOption.dateNewest;
+  FilterOption _currentFilter = FilterOption.all;
 
   @override
   void initState() {
@@ -40,16 +48,22 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _seedDummyDataIfEmpty() async {
     final dbRecords = await DatabaseService.instance.getAllScans();
     if (dbRecords.isEmpty) {
+      // NOTE: Using `DateTime.now()` to create sortable date strings instead of fixed ones.
+      final now = DateTime.now();
       final List<Map<String, dynamic>> dummyData = [
-        {'value': 0.1, 'disease': 'Healthy', 'date': 'Dec 20, 2025'},
-        {'value': 50.1, 'disease': 'Anthracnose', 'date': 'Dec 19, 2025'},
-        {'value': 89.2, 'disease': 'Anthracnose', 'date': 'Dec 18, 2025'},
-        {'value': 4.5, 'disease': 'Healthy', 'date': 'Dec 17, 2025'},
-        {'value': 25.8, 'disease': 'Anthracnose', 'date': 'Dec 16, 2025'},
-        {'value': 95.0, 'disease': 'Anthracnose', 'date': 'Dec 15, 2025'},
-        {'value': 1.2, 'disease': 'Healthy', 'date': 'Dec 14, 2025'},
-        {'value': 62.3, 'disease': 'Anthracnose', 'date': 'Dec 13, 2025'},
-        {'value': 15.0, 'disease': 'Anthracnose', 'date': 'Dec 12, 2025'},
+        {'value': 0.1, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 1)))},
+        {'value': 50.1, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 2)))},
+        {'value': 89.2, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 3)))},
+        {'value': 4.5, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 4)))},
+        {'value': 25.8, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 5)))},
+        {'value': 95.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 6)))},
+        {'value': 1.2, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 7)))},
+        {'value': 62.3, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 8)))},
+        {'value': 15.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 9)))},
+        {'value': 0.5, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 10)))},
+        {'value': 80.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 11)))},
+        {'value': 10.5, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 12)))},
+        {'value': 45.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 13)))},
       ];
 
       for (var data in dummyData) {
@@ -66,6 +80,12 @@ class _ScanPageState extends State<ScanPage> {
     }
     _loadScanHistory();
   }
+  
+  // Simple date formatter (to match original dummy data style, but use actual date)
+  String _formatDate(DateTime date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
 
   // Loads all scan records from the database.
   Future<void> _loadScanHistory() async {
@@ -79,13 +99,170 @@ class _ScanPageState extends State<ScanPage> {
       setState(() {
         _scanHistory = history;
         _isLoading = false;
+        _applySortAndFilter(); // Apply initial sort/filter after loading
       });
     }
   }
 
+  // --- Filtering and Sorting Logic ---
+
+  void _applySortAndFilter() {
+    // 1. Start with the full history list
+    List<ScanRecord> filteredList = List.from(_scanHistory);
+
+    // 2. Apply Filtering
+    if (_currentFilter != FilterOption.all) {
+      final String filterStatus = _currentFilter.toString().split('.').last;
+      filteredList = filteredList
+          .where((record) => record.status.toLowerCase() == filterStatus)
+          .toList();
+    }
+
+    // 3. Apply Sorting
+    filteredList.sort((a, b) {
+      switch (_currentSort) {
+        case SortOption.dateNewest:
+          // To sort Newest First (Descending by ID): b.id > a.id (Corrected logic from the previous turn, keeping it reversed as per user report)
+          // Since the user reported it was reversed, we swap the comparison order.
+          return a.id.compareTo(b.id); 
+
+        case SortOption.dateOldest:
+          // To sort Oldest First (Ascending by ID): a.id < b.id (Corrected logic from the previous turn, keeping it reversed as per user report)
+          // Since the user reported it was reversed, we swap the comparison order.
+          return b.id.compareTo(a.id);
+
+        case SortOption.severityHigh:
+          // High to Low: b.value > a.value
+          return b.severityValue.compareTo(a.severityValue);
+
+        case SortOption.severityLow:
+          // Low to High: a.value > b.value
+          return a.severityValue.compareTo(b.severityValue);
+      }
+    });
+
+    setState(() {
+      _displayScanHistory = filteredList;
+    });
+  }
+
+  // --- UI Methods for Sort/Filter Selection ---
+
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext context) {
+        return _buildOptionsSheet<SortOption>(
+          title: 'Sort By',
+          currentOption: _currentSort,
+          options: {
+            SortOption.dateNewest: 'Date (Newest First)',
+            SortOption.dateOldest: 'Date (Oldest First)',
+            SortOption.severityHigh: 'Severity (High to Low)',
+            SortOption.severityLow: 'Severity (Low to High)',
+          },
+          onSelect: (option) {
+            setState(() {
+              _currentSort = option;
+              _applySortAndFilter();
+            });
+            Navigator.pop(context);
+          },
+        );
+      },
+    );
+  }
+
+  void _showFilterOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext context) {
+        return _buildOptionsSheet<FilterOption>(
+          title: 'Filter By Status',
+          currentOption: _currentFilter,
+          options: {
+            FilterOption.all: 'All Scans',
+            FilterOption.healthy: 'Healthy',
+            FilterOption.moderate: 'Moderate',
+            FilterOption.severe: 'Severe',
+          },
+          onSelect: (option) {
+            setState(() {
+              _currentFilter = option;
+              _applySortAndFilter();
+            });
+            Navigator.pop(context);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildOptionsSheet<T extends Enum>({
+    required String title,
+    required T currentOption,
+    required Map<T, String> options,
+    required Function(T) onSelect,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF005200),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(),
+          ...options.entries.map((entry) {
+            final option = entry.key;
+            final label = entry.value;
+            final isSelected = option == currentOption;
+
+            return InkWell(
+              onTap: () => onSelect(option),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected ? const Color(0xFF007700) : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    if (isSelected)
+                      const Icon(Icons.check, color: Color(0xFF007700), size: 20),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Calculate Summary Stats
+    // Calculate Summary Stats (always based on the full history, not the display list)
     final int totalScans = _scanHistory.length;
     // Count items where status is explicitly 'Healthy'
     final int healthyScans = _scanHistory
@@ -150,15 +327,15 @@ class _ScanPageState extends State<ScanPage> {
                   Expanded(
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
-                        : _scanHistory.isEmpty
+                        : _displayScanHistory.isEmpty
                         ? Center(
                             child: Text(
-                              'No scan history found.',
+                              'No scans matching the current filter.',
                               style: GoogleFonts.inter(color: Colors.grey[500]),
                             ),
                           )
                         : ListView.separated(
-                            itemCount: _scanHistory.length,
+                            itemCount: _displayScanHistory.length,
                             padding: EdgeInsets.fromLTRB(
                               16,
                               0,
@@ -166,7 +343,7 @@ class _ScanPageState extends State<ScanPage> {
                               ScanConstants.kBottomRadius + 16,
                             ),
                             itemBuilder: (context, index) {
-                              final item = _scanHistory[index];
+                              final item = _displayScanHistory[index];
                               return _buildScanHistoryItem(
                                 context,
                                 severityValue: item.severityValue
@@ -243,14 +420,17 @@ class _ScanPageState extends State<ScanPage> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   _buildFilterButton(
-                    'Sort',
+                    _getSortLabel(),
                     Icons.sort,
+                    onPressed: _showSortOptions,
                     backgroundColor: const Color(0xFF007700),
                   ),
                   const SizedBox(width: 8),
                   _buildFilterButton(
-                    'Filters',
+                    _getFilterLabel(),
                     Icons.filter_list,
+                    onPressed: _showFilterOptions,
+                    // Keep the background color constant regardless of filter state
                     backgroundColor: const Color(0xFF007700),
                   ),
                 ],
@@ -260,6 +440,34 @@ class _ScanPageState extends State<ScanPage> {
         ],
       ),
     );
+  }
+
+  // Gets the displayed label for the Sort button
+  String _getSortLabel() {
+    switch (_currentSort) {
+      case SortOption.dateNewest:
+        return 'Sorted: Newest';
+      case SortOption.dateOldest:
+        return 'Sorted: Oldest';
+      case SortOption.severityHigh:
+        return 'Sorted: High Sev.';
+      case SortOption.severityLow:
+        return 'Sorted: Low Sev.';
+    }
+  }
+
+  // Gets the displayed label for the Filter button
+  String _getFilterLabel() {
+    switch (_currentFilter) {
+      case FilterOption.all:
+        return 'Filter: All';
+      case FilterOption.healthy:
+        return 'Filter: Healthy';
+      case FilterOption.moderate:
+        return 'Filter: Moderate';
+      case FilterOption.severe:
+        return 'Filter: Severe';
+    }
   }
 
   Widget _buildSummaryCard({
@@ -303,6 +511,7 @@ class _ScanPageState extends State<ScanPage> {
     String label,
     IconData icon, {
     required Color backgroundColor,
+    required VoidCallback onPressed,
   }) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
@@ -313,9 +522,7 @@ class _ScanPageState extends State<ScanPage> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500),
       ),
-      onPressed: () {
-        // Placeholder onPressed action
-      },
+      onPressed: onPressed,
       icon: Icon(icon, color: Colors.white),
       label: Text(label),
     );
