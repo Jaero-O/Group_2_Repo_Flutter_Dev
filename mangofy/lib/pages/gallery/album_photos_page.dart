@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart'; 
+import 'gallery_dialogs.dart'; // Import dialogs for long press actions
 
 /// Page that displays photos within a specific album.
 class AlbumPhotosPage extends StatelessWidget {
@@ -52,6 +53,24 @@ class AlbumPhotosPage extends StatelessWidget {
                 imagePath: imageId,
               ),
             ),
+          );
+        },
+        // Add onItemLongPress handler for photo deletion
+        onItemLongPress: (index) {
+          final imageId = imageList[index];
+          // Default action for long press on a photo in an album
+          GalleryDialogs.showDeleteConfirmationDialog(
+            context,
+            'Photo',
+            imageId,
+            () {
+              // In a real app, this would call a service to delete the photo from the album
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Photo "$imageId" removed from $albumTitle!'),
+                ),
+              );
+            },
           );
         },
       ),

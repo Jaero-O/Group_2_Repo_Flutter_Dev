@@ -146,6 +146,96 @@ class _GalleryPageState extends State<GalleryPage> {
     );
     
     await _loadMyTreesFromDb();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Album "$albumName" created!'),
+        ),
+      );
+  }
+  
+  /// Handles photo long press for deletion (for simplicity, only shows dialog)
+  void _handlePhotoLongPress(String imageId) {
+    GalleryDialogs.showDeleteConfirmationDialog(
+      context,
+      'Photo',
+      imageId,
+      () {
+        // In a real app, logic to delete the photo from DB/storage would go here
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Photo "$imageId" deleted!'),
+          ),
+        );
+        // Note: We don't call setState because we're using mock data and not deleting it
+        // from the list generation logic, but in a real app, you would reload/update the list.
+      },
+    );
+  }
+
+  /// Handles album long press for edit/delete options
+  void _handleAlbumLongPress(MyTree album) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Name'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  GalleryDialogs.showEditAlbumNameDialog(
+                    context,
+                    album.title,
+                    _handleAlbumNameUpdate,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Delete Tree', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  GalleryDialogs.showDeleteConfirmationDialog(
+                    context,
+                    'Tree',
+                    album.title,
+                    () => _handleAlbumDeletion(album.title),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Handles album name update
+  void _handleAlbumNameUpdate(String oldName, String newName) async {
+    await DatabaseService.instance.updateMyTreeTitle(oldName, newName);
+    await _loadMyTreesFromDb();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Tree "$oldName" renamed to "$newName".'),
+      ),
+    );
+  }
+
+  /// Handles album deletion
+  void _handleAlbumDeletion(String albumName) async {
+    await DatabaseService.instance.deleteMyTree(albumName);
+    await _loadMyTreesFromDb();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Tree "$albumName" deleted.'),
+      ),
+    );
   }
 
 
@@ -156,14 +246,18 @@ class _GalleryPageState extends State<GalleryPage> {
 
     if (!widget.isSelectionMode) {
       return isPhotosView
-          ? const PhotosView()
-          : MyTreesPage(albums: myTreesAlbums); 
+          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress) // Pass handler
+          : MyTreesPage(
+              albums: myTreesAlbums,
+              onAlbumLongPress: _handleAlbumLongPress, // Pass handler
+            ); 
     }
 
     if (isPhotoSelectionScreen) {
       final contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
       final allImageIds = _getCurrentImageIds();
 
+      // In selection mode, long press is usually disabled or irrelevant
       return PhotosSelectionGrid(
         contentKey: contentKey,
         allImageIds: allImageIds,
@@ -179,6 +273,8 @@ class _GalleryPageState extends State<GalleryPage> {
             selectedAlbumTitle = title;
           });
         },
+        // Long press for albums is not typically active in album selection mode
+        onAlbumLongPress: null, 
       );
     }
   }

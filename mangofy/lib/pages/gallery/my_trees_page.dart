@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'album_photos_page.dart';
 import '../../model/my_tree_model.dart'; 
 
+/// Type definition for the callback when an album is long-pressed
+typedef AlbumLongPressCallback = void Function(MyTree album);
+
 // Displays a grid of photo albums
 class MyTreesPage extends StatelessWidget {
   // If true, page is in selection mode
@@ -9,6 +12,9 @@ class MyTreesPage extends StatelessWidget {
 
   // Callback when an album is selected in selection mode
   final ValueChanged<String>? onAlbumSelected;
+
+  // Callback when an album is long-pressed
+  final AlbumLongPressCallback? onAlbumLongPress;
 
   // List of albums to display
   final List<MyTree> albums;
@@ -18,6 +24,7 @@ class MyTreesPage extends StatelessWidget {
     this.isSelectionMode = false,
     this.onAlbumSelected,
     this.albums = const [],
+    this.onAlbumLongPress, // Initialize new property
   });
 
   @override
@@ -64,6 +71,9 @@ class MyTreesPage extends StatelessWidget {
               );
             }
           },
+          onLongPress: onAlbumLongPress == null || isSelectionMode
+              ? null // Disable long press if no handler is provided or in selection mode
+              : () => onAlbumLongPress!(album), // Pass the album object
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

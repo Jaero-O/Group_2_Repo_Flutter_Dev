@@ -65,32 +65,54 @@ class FullScreenPhotoView extends StatelessWidget {
 class PhotoGridItemPlaceholder extends StatelessWidget {
   final double iconSize;
   final double borderRadius;
-  // New property for tap handler
-  final VoidCallback? onTap; 
+  // Removed onTap from here, it's now handled by the wrapper
 
   const PhotoGridItemPlaceholder({
     super.key,
     this.iconSize = 40,
     this.borderRadius = 8,
-    this.onTap, // Initialize new property
   });
 
   @override
   Widget build(BuildContext context) {
-    // Wrapped with GestureDetector to handle taps
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+      child: Icon(
+        Icons.photo,
+        color: Colors.grey,
+        size: iconSize,
+      ),
+    );
+  }
+}
+
+/// A wrapper to add tap and long press functionality to a grid item.
+class LongPressableGridItemPlaceholder extends StatelessWidget {
+  final double iconSize;
+  final double borderRadius;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final Widget child;
+
+  const LongPressableGridItemPlaceholder({
+    super.key,
+    this.iconSize = 40,
+    this.borderRadius = 8,
+    this.onTap,
+    this.onLongPress,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Wrapped with GestureDetector to handle taps and long presses
     return GestureDetector( 
       onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(borderRadius),
-        ),
-        child: Icon(
-          Icons.photo,
-          color: Colors.grey,
-          size: iconSize,
-        ),
-      ),
+      onLongPress: onLongPress, // Handle long press
+      child: child,
     );
   }
 }
@@ -106,8 +128,10 @@ class PhotoGridPlaceholder extends StatelessWidget {
   final bool shrinkWrap;
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
-  // New property for tap handler, passes the item index/ID
+  // New property for tap handler
   final ValueChanged<int>? onItemTap; 
+  // New property for long press handler
+  final ValueChanged<int>? onItemLongPress; 
   // List of placeholder image IDs (used to pass context to the full screen view)
   final List<String> imageIds; 
 
@@ -122,7 +146,8 @@ class PhotoGridPlaceholder extends StatelessWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = EdgeInsets.zero,
-    this.onItemTap, // Initialize new property
+    this.onItemTap,
+    this.onItemLongPress, // Initialize new property
     this.imageIds = const [], // Initialize new property
   });
 
@@ -139,15 +164,25 @@ class PhotoGridPlaceholder extends StatelessWidget {
       ),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        return PhotoGridItemPlaceholder(
-          iconSize: iconSize,
+        return LongPressableGridItemPlaceholder(
           borderRadius: borderRadius,
+          iconSize: iconSize,
           // Pass the tap handler to the grid item
           onTap: () { 
             if (onItemTap != null) {
               onItemTap!(index);
             }
           },
+          // Pass the long press handler to the grid item
+          onLongPress: () {
+            if (onItemLongPress != null) {
+              onItemLongPress!(index);
+            }
+          },
+          child: PhotoGridItemPlaceholder(
+            iconSize: iconSize,
+            borderRadius: borderRadius,
+          ),
         );
       },
     );

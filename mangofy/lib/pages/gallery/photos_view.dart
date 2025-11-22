@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart';
+import 'gallery_dialogs.dart'; // Import dialogs for long press actions
 
 // Widget that displays a grid or list of photos depending on the view mode.
 // Supports four view modes: 'All Photos', 'Years', 'Months', or 'Days'.
@@ -7,9 +8,13 @@ class PhotoGridContent extends StatelessWidget {
   /// Current view mode: 'All Photos', 'Years', 'Months', or 'Days'
   final String viewMode;
 
+  /// Callback for when a photo is long-pressed (for deletion/options)
+  final ValueChanged<String>? onPhotoLongPress;
+
   const PhotoGridContent({
     super.key,
     this.viewMode = 'All Photos',
+    this.onPhotoLongPress, // Initialize new property
   });
 
   // Helper method to navigate to the full screen view
@@ -40,6 +45,27 @@ class PhotoGridContent extends StatelessWidget {
         iconSize: 40,
         onItemTap: (index) {
           _openFullScreenView(context, allPhotos[index]);
+        },
+        // Handle long press on photo
+        onItemLongPress: (index) {
+          if (onPhotoLongPress != null) {
+            onPhotoLongPress!(allPhotos[index]);
+          } else {
+            // Default action if no handler is provided (e.g., in a non-deletion context)
+            GalleryDialogs.showDeleteConfirmationDialog(
+              context,
+              'Photo',
+              allPhotos[index],
+              () {
+                // In a real app, this would call a service to delete the photo
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Photo ${allPhotos[index]} marked for deletion!'),
+                  ),
+                );
+              },
+            );
+          }
         },
       );
     } else {
@@ -174,13 +200,40 @@ class PhotoGridContent extends StatelessWidget {
       onItemTap: (index) {
         _openFullScreenView(context, imageIds[index]);
       },
+      // Pass long press handler for grouped views
+      onItemLongPress: (index) {
+        if (onPhotoLongPress != null) {
+          onPhotoLongPress!(imageIds[index]);
+        } else {
+          // Default action if no handler is provided
+          GalleryDialogs.showDeleteConfirmationDialog(
+            context,
+            'Photo',
+            imageIds[index],
+            () {
+              // In a real app, this would call a service to delete the photo
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Photo ${imageIds[index]} marked for deletion!'),
+                ),
+              );
+            },
+          );
+        }
+      },
     );
   }
 }
 
 // Main widget for displaying photos with a bottom view mode selector
 class PhotosView extends StatefulWidget {
-  const PhotosView({super.key});
+  // New property for photo long press, passed from GalleryPage
+  final ValueChanged<String>? onPhotoLongPress; 
+
+  const PhotosView({
+    super.key,
+    this.onPhotoLongPress, // Initialize new property
+  });
 
   @override
   State<PhotosView> createState() => _PhotosViewState();
@@ -196,7 +249,10 @@ class _PhotosViewState extends State<PhotosView> {
       children: [
         // Main photo grid/list content
         Positioned.fill(
-          child: PhotoGridContent(viewMode: viewMode),
+          child: PhotoGridContent(
+            viewMode: viewMode,
+            onPhotoLongPress: widget.onPhotoLongPress, // Pass handler down
+          ),
         ),
 
         // Bottom view mode selector

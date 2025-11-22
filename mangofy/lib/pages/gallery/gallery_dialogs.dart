@@ -6,6 +6,12 @@ import 'gallery_page.dart';
 typedef AlbumCreationCallback =
     void Function(String albumName, List<String> selectedImageIds);
 
+/// Type definition for the callback when an album name is updated
+typedef AlbumUpdateCallback = void Function(String oldName, String newName);
+
+/// Type definition for the callback when an album is deleted
+typedef AlbumDeletionCallback = void Function(String albumName);
+
 /// Static class to manage all dialogs and navigation logic for album creation
 class GalleryDialogs {
   /// Shows a dialog to create a new album
@@ -159,5 +165,80 @@ class GalleryDialogs {
         ),
       );
     }
+  }
+
+  /// Shows a confirmation dialog for deletion
+  static void showDeleteConfirmationDialog(
+    BuildContext context,
+    String itemType, // 'Photo' or 'Album'
+    String itemName,
+    VoidCallback onDeleteConfirmed,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Delete $itemType "$itemName"?'),
+          content: Text(
+              'Are you sure you want to delete this $itemType? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                onDeleteConfirmed();
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Shows a dialog to edit an album's name
+  static void showEditAlbumNameDialog(
+    BuildContext context,
+    String currentName,
+    AlbumUpdateCallback onNameUpdated,
+  ) {
+    final TextEditingController controller =
+        TextEditingController(text: currentName);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Edit Tree Name'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Enter new tree name',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final newName = controller.text.trim();
+                if (newName.isNotEmpty && newName != currentName) {
+                  Navigator.pop(dialogContext);
+                  onNameUpdated(currentName, newName);
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

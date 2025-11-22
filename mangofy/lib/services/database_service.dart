@@ -225,7 +225,27 @@ class DatabaseService {
     return maps.map((m) => MyTree.fromMap(m)).toList();
   }
 
-  // Dataset Folders 
+  Future<int> updateMyTreeTitle(String oldTitle, String newTitle) async {
+    final db = await instance.database;
+    return db.update(
+      treesTable,
+      {colTreeTitle: newTitle},
+      where: "$colTreeTitle = ?",
+      whereArgs: [oldTitle],
+    );
+  }
+
+  // New method: Delete a tree by title
+  Future<int> deleteMyTree(String title) async {
+    final db = await instance.database;
+    return db.delete(
+      treesTable,
+      where: "$colTreeTitle = ?",
+      whereArgs: [title],
+    );
+  }
+
+  // Dataset Folders
   Future<int> insertDatasetFolder({
     required String name,
     required List<String> imageIds,
