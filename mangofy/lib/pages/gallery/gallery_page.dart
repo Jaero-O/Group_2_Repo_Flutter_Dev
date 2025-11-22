@@ -184,7 +184,7 @@ class _GalleryPageState extends State<GalleryPage> {
             children: [
               ListTile(
                 leading: const Icon(Icons.edit),
-                title: const Text('Edit Name'),
+                title: const Text('Rename'),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   GalleryDialogs.showEditAlbumNameDialog(
