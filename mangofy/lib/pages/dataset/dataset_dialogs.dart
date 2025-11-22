@@ -103,6 +103,7 @@ class DatasetDialogs {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           // Set contentPadding to ensure minimal bottom space after the content items.
           contentPadding: const EdgeInsets.fromLTRB(
