@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'scan_details_page.dart';
-import '../../ui/green_header_background.dart';
 import 'scan_constants.dart';
+import '../../ui/green_header_background.dart';
 import '../../services/database_service.dart';
 import '../../model/scan_model.dart';
 
@@ -53,8 +53,6 @@ class _ScanPageState extends State<ScanPage> {
       ];
 
       for (var data in dummyData) {
-        // FIX: Cast to 'num' first, then call .toDouble() to safely convert
-        // both int (45) and double values to double.
         final double severityValue = (data['value'] as num).toDouble();
         final String status = _getStatusFromValue(severityValue);
 
@@ -402,7 +400,7 @@ class _ScanPageState extends State<ScanPage> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.2),
+                          color: primaryColor.withAlpha(51),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
