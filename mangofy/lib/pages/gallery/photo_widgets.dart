@@ -1,27 +1,95 @@
 import 'package:flutter/material.dart';
 
+/// Page that displays a single photo in full screen with a close button.
+class FullScreenPhotoView extends StatelessWidget {
+  // Currently, we'll display a large placeholder as we don't have actual image loading.
+  final String imagePath;
+
+  const FullScreenPhotoView({
+    super.key,
+    required this.imagePath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // Black background for a typical full-screen photo view
+      backgroundColor: Colors.black, 
+      body: Stack(
+        children: [
+          // Photo Display Area (Placeholder)
+          Center(
+            child: Container(
+              // Placeholder for the actual image. Display the ID for context.
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.all(50),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.photo,
+                    color: Colors.white70,
+                    size: 80,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Viewing: $imagePath',
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Close Button
+          Positioned(
+            top: 40, // Below status bar
+            right: 16,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A reusable grid item widget for displaying a generic photo placeholder.
 class PhotoGridItemPlaceholder extends StatelessWidget {
   final double iconSize;
   final double borderRadius;
+  // New property for tap handler
+  final VoidCallback? onTap; 
 
   const PhotoGridItemPlaceholder({
     super.key,
     this.iconSize = 40,
     this.borderRadius = 8,
+    this.onTap, // Initialize new property
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(borderRadius),
-      ),
-      child: Icon(
-        Icons.photo,
-        color: Colors.grey,
-        size: iconSize,
+    // Wrapped with GestureDetector to handle taps
+    return GestureDetector( 
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
+        child: Icon(
+          Icons.photo,
+          color: Colors.grey,
+          size: iconSize,
+        ),
       ),
     );
   }
@@ -38,6 +106,10 @@ class PhotoGridPlaceholder extends StatelessWidget {
   final bool shrinkWrap;
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
+  // New property for tap handler, passes the item index/ID
+  final ValueChanged<int>? onItemTap; 
+  // List of placeholder image IDs (used to pass context to the full screen view)
+  final List<String> imageIds; 
 
   const PhotoGridPlaceholder({
     super.key,
@@ -50,6 +122,8 @@ class PhotoGridPlaceholder extends StatelessWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = EdgeInsets.zero,
+    this.onItemTap, // Initialize new property
+    this.imageIds = const [], // Initialize new property
   });
 
   @override
@@ -68,6 +142,12 @@ class PhotoGridPlaceholder extends StatelessWidget {
         return PhotoGridItemPlaceholder(
           iconSize: iconSize,
           borderRadius: borderRadius,
+          // Pass the tap handler to the grid item
+          onTap: () { 
+            if (onItemTap != null) {
+              onItemTap!(index);
+            }
+          },
         );
       },
     );

@@ -12,31 +12,47 @@ class PhotoGridContent extends StatelessWidget {
     this.viewMode = 'All Photos',
   });
 
+  // Helper method to navigate to the full screen view
+  void _openFullScreenView(BuildContext context, String imagePath) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenPhotoView(imagePath: imagePath),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Display a simple 4-column grid for "All Photos"
+    // --- "All Photos" view ---
     if (viewMode == 'All Photos') {
-      // Use the reusable PhotoGridPlaceholder
-      return const PhotoGridPlaceholder(
-        itemCount: 40,
+      const int count = 40;
+      final List<String> allPhotos = List.generate(count, (i) => 'AllPhotos_photo_$i');
+
+      return PhotoGridPlaceholder(
+        itemCount: count,
+        imageIds: allPhotos,
         crossAxisCount: 4,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
-        padding: EdgeInsets.all(4),
+        padding: const EdgeInsets.all(4),
         borderRadius: 4, 
         iconSize: 40,
+        onItemTap: (index) {
+          _openFullScreenView(context, allPhotos[index]);
+        },
       );
     } else {
-      // For grouped views: Years, Months, or Days
+    // --- Grouped views (Years, Months, or Days) ---
       return ListView(
         padding: const EdgeInsets.all(12),
-        children: _buildGroupedSections(),
+        children: _buildGroupedSections(context), // Pass context here
       );
     }
   }
 
   // Builds sections for the grouped views (Years, Months, Days)
-  List<Widget> _buildGroupedSections() {
+  List<Widget> _buildGroupedSections(BuildContext context) { // Accept context
     final yearData = {
       '2025': {
         'December': ['01', '02', '05'],
@@ -46,6 +62,7 @@ class PhotoGridContent extends StatelessWidget {
     };
 
     List<Widget> sections = [];
+    int photoIndex = 0; // Use an index to generate unique IDs for the placeholders
 
     yearData.forEach((year, months) {
       if (viewMode == 'Years') {
@@ -59,6 +76,10 @@ class PhotoGridContent extends StatelessWidget {
           ),
         );
         months.forEach((month, days) {
+          final count = 16;
+          final currentPhotos = List.generate(count, (i) => 'Y:$year/M:$month/P:${photoIndex + i}');
+          photoIndex += count;
+
           sections.add(
             Padding(
               padding: const EdgeInsets.only(left: 24, top: 6, bottom: 12),
@@ -71,7 +92,7 @@ class PhotoGridContent extends StatelessWidget {
                         fontSize: 20, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
-                  _buildPhotoGrid(16), 
+                  _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
                 ],
               ),
             ),
@@ -79,6 +100,10 @@ class PhotoGridContent extends StatelessWidget {
         });
       } else if (viewMode == 'Months') {
         months.forEach((month, days) {
+          final count = 16;
+          final currentPhotos = List.generate(count, (i) => 'M:$month/Y:$year/P:${photoIndex + i}');
+          photoIndex += count;
+
           sections.add(
             Padding(
               padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
@@ -91,7 +116,7 @@ class PhotoGridContent extends StatelessWidget {
                         const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  _buildPhotoGrid(16),
+                  _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
                 ],
               ),
             ),
@@ -100,6 +125,10 @@ class PhotoGridContent extends StatelessWidget {
       } else if (viewMode == 'Days') {
         months.forEach((month, days) {
           for (var day in days) {
+            final count = 8;
+            final currentPhotos = List.generate(count, (i) => 'D:$day/M:$month/Y:$year/P:${photoIndex + i}');
+            photoIndex += count;
+
             sections.add(
               Padding(
                 padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
@@ -112,7 +141,7 @@ class PhotoGridContent extends StatelessWidget {
                           fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    _buildPhotoGrid(8),
+                    _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
                   ],
                 ),
               ),
@@ -126,10 +155,15 @@ class PhotoGridContent extends StatelessWidget {
   }
 
   // Helper method to build a placeholder photo grid of [count] items
-  Widget _buildPhotoGrid(int count) {
+  Widget _buildPhotoGrid(
+    BuildContext context, 
+    int count, 
+    List<String> imageIds,
+  ) {
     // Use the reusable PhotoGridPlaceholder
     return PhotoGridPlaceholder(
       itemCount: count,
+      imageIds: imageIds,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 4,
@@ -137,6 +171,9 @@ class PhotoGridContent extends StatelessWidget {
       mainAxisSpacing: 4,
       borderRadius: 8,
       iconSize: 40,
+      onItemTap: (index) {
+        _openFullScreenView(context, imageIds[index]);
+      },
     );
   }
 }
