@@ -7,6 +7,9 @@ import '../gallery/gallery_page.dart';
 typedef FolderCreationCallback =
     void Function(String finalFolderName, List<String> selectedImages);
 
+// Type definition for actions on an existing folder
+enum FolderAction { rename, delete }
+
 /// A set of static methods to manage all dialogs and navigation logic
 /// for creating a new dataset folder.
 class DatasetDialogs {
@@ -93,11 +96,17 @@ class DatasetDialogs {
     );
   }
 
-  /// Shows a dialog for entering the new folder name
-  static Future<String?> _showFolderNameDialog(BuildContext context) async {
-    String folderName = '';
+  /// Shows a dialog for entering/editing a folder name
+  static Future<String?> _showNameInputDialog(
+    BuildContext context, {
+    required String title,
+    required String actionButtonText,
+    String initialName = '',
+    String hintText = 'e.g., My Mango Farm',
+  }) async {
+    String folderName = initialName;
     // Controller to manage the TextField content
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController controller = TextEditingController(text: initialName);
 
     return showDialog<String>(
       context: context,
@@ -115,7 +124,7 @@ class DatasetDialogs {
           actionsPadding: EdgeInsets.zero, 
           actions: [], 
           title: Text(
-            'Create new dataset',
+            title,
             style: GoogleFonts.inter(fontWeight: FontWeight.w600),
           ),
 
@@ -157,7 +166,7 @@ class DatasetDialogs {
                 autofocus: true,
                 onChanged: (val) => folderName = val,
                 decoration: InputDecoration(
-                  hintText: 'e.g., My Mango Farm',
+                  hintText: hintText,
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 0),
                   labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400),
@@ -194,11 +203,104 @@ class DatasetDialogs {
                     },
                     style: TextButton.styleFrom(foregroundColor: Colors.black54),
                     child: Text(
-                      'Save',
+                      actionButtonText,
                       style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Shows a dialog for entering the new folder name
+  static Future<String?> _showFolderNameDialog(BuildContext context) async {
+    return _showNameInputDialog(
+      context,
+      title: 'Create new dataset',
+      actionButtonText: 'Save',
+    );
+  }
+
+  /// Shows a dialog for renaming an existing folder
+  static Future<String?> showRenameFolderDialog(
+    BuildContext context,
+    String currentName,
+  ) async {
+    return _showNameInputDialog(
+      context,
+      title: 'Rename dataset',
+      actionButtonText: 'Rename',
+      initialName: currentName,
+      hintText: currentName,
+    );
+  }
+
+
+  /// Shows a dialog to choose between renaming or deleting a dataset folder
+  static Future<FolderAction?> showFolderActionDialog(
+    BuildContext context,
+    String folderName,
+  ) async {
+    return showModalBottomSheet<FolderAction?>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          // Adjusted padding to match the image's minimal content spacing
+          padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0), 
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            // Removed folderName text and Divider to match the image
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 'Edit Name' option
+              InkWell(
+                onTap: () => Navigator.pop(context, FolderAction.rename),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 10.0), // Padding to mimic ListTile
+                  child: Row(
+                    children: [
+                      const Icon(Icons.edit, color: Colors.black87),
+                      const SizedBox(width: 32),
+                      Text(
+                        'Rename', // Changed label
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 'Delete Tree' option
+              InkWell(
+                onTap: () => Navigator.pop(context, FolderAction.delete),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 10.0), // Padding to mimic ListTile
+                  child: Row(
+                    children: [
+                      const Icon(Icons.delete_forever, color: Colors.red),
+                      const SizedBox(width: 32),
+                      Text(
+                        'Delete Dataset', // Changed label
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

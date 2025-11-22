@@ -273,6 +273,84 @@ class DatabaseService {
     return maps.map((m) => DatasetFolder.fromMap(m)).toList();
   }
 
+  /// NEW: Update a dataset folder's name
+  Future<int> updateDatasetFolderName(String oldName, String newName) async {
+    final db = await instance.database;
+    return db.update(
+      datasetsTable,
+      {colFolderName: newName},
+      where: "$colFolderName = ?",
+      whereArgs: [oldName],
+    );
+  }
+
+  /// NEW: Delete a dataset folder by name
+  Future<int> deleteDatasetFolder(String name) async {
+    final db = await instance.database;
+    return db.delete(
+      datasetsTable,
+      where: "$colFolderName = ?",
+      whereArgs: [name],
+    );
+  }
+
+  /// NEW: Remove a single image ID from a dataset folder's list
+  /// If the folder becomes empty, it is deleted.
+  Future<void> removeImageFromDatasetFolder(
+    String folderName,
+    String imageIdToRemove,
+  ) async {
+    final db = await instance.database;
+
+    // 1. Fetch the existing folder data
+    final maps = await db.query(
+      datasetsTable,
+      where: "$colFolderName = ?",
+      whereArgs: [folderName],
+      limit: 1,
+    );
+
+    if (maps.isEmpty) {
+      return; // Folder not found
+    }
+
+    final folder = DatasetFolder.fromMap(maps.first);
+
+    // 2. Modify the image list
+    final updatedImages = folder.images
+        .where((id) => id != imageIdToRemove)
+        .toList();
+
+    // 3. CHECK: If the folder is now empty, delete it entirely.
+    if (updatedImages.isEmpty) {
+      await deleteDatasetFolder(folderName);
+      return;
+    }
+
+    // 4. Update the folder in the database with the new image list.
+    // Create the updated folder object (ID will be null if not explicitly passed)
+    final updatedFolder = DatasetFolder(
+      name: folder.name,
+      images: updatedImages,
+      dateCreated: folder.dateCreated,
+    );
+    
+    // Convert to map
+    final updateMap = updatedFolder.toMap();
+    
+    // FIX: Remove the ID column from the map to prevent Sqflite from trying 
+    // to update the primary key to NULL, which causes the datatype mismatch.
+    updateMap.remove(colId);
+
+    // Note: DatasetFolder.toMap() converts List<String> images to a comma-separated String
+    await db.update(
+      datasetsTable,
+      updateMap, // Pass the map without the ID
+      where: "$colFolderName = ?",
+      whereArgs: [folderName],
+    );
+  }
+
   // DB Close / Reset
   Future<void> close() async {
     final db = _database;

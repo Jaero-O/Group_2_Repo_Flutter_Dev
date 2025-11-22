@@ -43,6 +43,59 @@ class _DatasetPageState extends State<DatasetPage> {
     });
   }
 
+  // Handler for folder rename or delete actions
+  void _handleFolderAction(String folderName) async {
+    final action = await DatasetDialogs.showFolderActionDialog(
+      context,
+      folderName,
+    );
+
+    if (action == FolderAction.rename) {
+      final newName = await DatasetDialogs.showRenameFolderDialog(
+        context,
+        folderName,
+      );
+
+      if (newName != null && newName.isNotEmpty && newName != folderName) {
+        await DatabaseService.instance.updateDatasetFolderName(
+          folderName,
+          newName,
+        );
+        _loadFolders(); // Reload to update UI
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Folder renamed to $newName')),
+        );
+      }
+    } else if (action == FolderAction.delete) {
+      // Show confirmation dialog before deleting
+      final bool confirmDelete = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirm Deletion'),
+          content: Text('Are you sure you want to delete the dataset "$folderName"? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ) ?? false;
+
+      if (confirmDelete) {
+        await DatabaseService.instance.deleteDatasetFolder(folderName);
+        _loadFolders(); // Reload to update UI
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Folder "$folderName" deleted.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -124,6 +177,7 @@ class _DatasetPageState extends State<DatasetPage> {
                           itemBuilder: (context, index) {
                             final folder = folders[index];
                             return GestureDetector(
+                              // Normal tap to view folder content
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -132,10 +186,14 @@ class _DatasetPageState extends State<DatasetPage> {
                                       // Access properties from the DatasetFolder model
                                       folderName: folder.name,
                                       images: folder.images,
+                                      // Pass _loadFolders to ensure the count updates if an image is removed
+                                      onImageRemoved: _loadFolders, 
                                     ),
                                   ),
                                 );
                               },
+                              // NEW: Long press to trigger action dialog
+                              onLongPress: () => _handleFolderAction(folder.name),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
