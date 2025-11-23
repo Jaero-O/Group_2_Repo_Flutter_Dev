@@ -1,8 +1,6 @@
-// dataset_widgets.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../services/database_service.dart'; // Add DB service import
+import '../../services/database_service.dart'; 
 
 // SVG folder icon.
 class SvgFolderIcon extends StatelessWidget {
@@ -21,7 +19,7 @@ class SvgFolderIcon extends StatelessWidget {
   }
 }
 
-/// Displays a single image (or image ID placeholder) in a full-screen view.
+// Displays a single image in a full-screen view.
 class FullScreenPhotoPage extends StatelessWidget {
   final String imageId;
 
@@ -34,27 +32,27 @@ class FullScreenPhotoPage extends StatelessWidget {
       backgroundColor: Colors.black, 
       body: Stack(
         children: [
-          // Center the photo content (currently the ID placeholder)
+          // Center the photo content 
           Center(
             child: Text(
               imageId,
               style: const TextStyle(
                 fontSize: 18,
-                color: Colors.white, // White text on black background
+                color: Colors.white, 
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.center,
             ),
           ),
           
-          // Close Button (Top Left)
+          // Close Button 
           Positioned(
-            top: 40, // Space from the top safe area
+            top: 40, 
             right: 10,
             child: SafeArea(
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () => Navigator.of(context).pop(), // Close the page
+                onPressed: () => Navigator.of(context).pop(), 
               ),
             ),
           ),
@@ -75,7 +73,7 @@ class FolderViewPage extends StatefulWidget {
     super.key,
     required this.folderName,
     required this.images,
-    required this.onImageRemoved, // Added required callback
+    required this.onImageRemoved, 
   });
 
   @override
@@ -89,7 +87,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
   @override
   void initState() {
     super.initState();
-    _currentImages = widget.images; // Initialize with widget images
+    _currentImages = widget.images; 
   }
 
   // Helper to show the delete confirmation dialog for an image
@@ -106,7 +104,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(dialogContext); // Close dialog
+              Navigator.pop(dialogContext); 
 
               // Call DB service to remove the image
               await DatabaseService.instance.removeImageFromDatasetFolder(

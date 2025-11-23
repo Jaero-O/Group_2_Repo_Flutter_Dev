@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart'; 
-import 'gallery_dialogs.dart'; // Import dialogs for long press actions
+import 'gallery_dialogs.dart'; 
 
-/// Page that displays photos within a specific album.
+// Page that displays photos within a specific album.
 class AlbumPhotosPage extends StatelessWidget {
   final String albumTitle;
   final List<String> images; 
@@ -15,7 +15,7 @@ class AlbumPhotosPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Generate placeholder image IDs if the list is empty (matching the old placeholder count)
+    // Generate placeholder image IDs if the list is empty
     final imageList = images.isEmpty ? List.generate(15, (i) => 'album_photo_$i') : images;
 
     return Scaffold(
@@ -35,8 +35,8 @@ class AlbumPhotosPage extends StatelessWidget {
 
       // Grid displaying album photos 
       body: PhotoGridPlaceholder(
-        itemCount: imageList.length, // Use the actual or placeholder count
-        imageIds: imageList, // Pass the list of image IDs
+        itemCount: imageList.length, 
+        imageIds: imageList, 
         crossAxisCount: 3, 
         crossAxisSpacing: 6, 
         mainAxisSpacing: 6, 
@@ -64,7 +64,7 @@ class AlbumPhotosPage extends StatelessWidget {
             'Photo',
             imageId,
             () {
-              // In a real app, this would call a service to delete the photo from the album
+              // This would call a service to delete the photo from the album
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Photo "$imageId" removed from $albumTitle!'),

@@ -3,7 +3,7 @@ import 'package:path/path.dart';
 import '../model/scan_summary_model.dart';
 import '../model/scan_model.dart';
 import '../model/my_tree_model.dart';
-import '../model/dataset_folder_model.dart'; // Ensure this model exists
+import '../model/dataset_folder_model.dart';
 
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._init();
@@ -45,14 +45,13 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 6, // <--- INCREMENTED VERSION TO 6 FOR MIGRATION
+      version: 6, 
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
 
   // Create Tables
-  // This runs for brand new installs (version 6 is created)
   Future<void> _createDB(Database db, int version) async {
     await db.execute('''
       CREATE TABLE $scanTable (
@@ -74,7 +73,6 @@ class DatabaseService {
       )
     ''');
 
-    // Dataset table creation for new installs
     await db.execute('''
       CREATE TABLE $datasetsTable (
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +84,6 @@ class DatabaseService {
   }
 
   // Upgrade / Migrations
-  // This runs for existing users when version changes (e.g., from 5 to 6)
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     // Migration for versions < 4 (creating my_trees table)
     if (oldVersion < 4) {
@@ -101,13 +98,7 @@ class DatabaseService {
       ''');
     }
 
-    // Migration for versions < 5 (potentially a fix for my_trees)
-    // NOTE: This block is redundant, but kept for historical context.
-    if (oldVersion < 5) {
-      // The logic here is typically for changes in V5, but the existing code is incomplete.
-    }
-
-    // New Migration for versions < 6: Create the dataset_folders table
+    // Migration for versions < 6: Create the dataset_folders table
     if (oldVersion < 6) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS $datasetsTable (
@@ -235,7 +226,7 @@ class DatabaseService {
     );
   }
 
-  // New method: Delete a tree by title
+  // Delete a tree 
   Future<int> deleteMyTree(String title) async {
     final db = await instance.database;
     return db.delete(
@@ -273,7 +264,7 @@ class DatabaseService {
     return maps.map((m) => DatasetFolder.fromMap(m)).toList();
   }
 
-  /// NEW: Update a dataset folder's name
+  // Update a dataset folder's name
   Future<int> updateDatasetFolderName(String oldName, String newName) async {
     final db = await instance.database;
     return db.update(
@@ -284,7 +275,7 @@ class DatabaseService {
     );
   }
 
-  /// NEW: Delete a dataset folder by name
+  // Delete a dataset folder by name
   Future<int> deleteDatasetFolder(String name) async {
     final db = await instance.database;
     return db.delete(
@@ -294,15 +285,15 @@ class DatabaseService {
     );
   }
 
-  /// NEW: Remove a single image ID from a dataset folder's list
-  /// If the folder becomes empty, it is deleted.
+  // Remove a single image ID from a dataset folder's list
+  // If the folder becomes empty, it is deleted.
   Future<void> removeImageFromDatasetFolder(
     String folderName,
     String imageIdToRemove,
   ) async {
     final db = await instance.database;
 
-    // 1. Fetch the existing folder data
+    // Fetch the existing folder data
     final maps = await db.query(
       datasetsTable,
       where: "$colFolderName = ?",
@@ -316,18 +307,18 @@ class DatabaseService {
 
     final folder = DatasetFolder.fromMap(maps.first);
 
-    // 2. Modify the image list
+    // Modify the image list
     final updatedImages = folder.images
         .where((id) => id != imageIdToRemove)
         .toList();
 
-    // 3. CHECK: If the folder is now empty, delete it entirely.
+    // If the folder is now empty, delete it entirely.
     if (updatedImages.isEmpty) {
       await deleteDatasetFolder(folderName);
       return;
     }
 
-    // 4. Update the folder in the database with the new image list.
+    // Update the folder in the database with the new image list.
     // Create the updated folder object (ID will be null if not explicitly passed)
     final updatedFolder = DatasetFolder(
       name: folder.name,
@@ -338,11 +329,11 @@ class DatabaseService {
     // Convert to map
     final updateMap = updatedFolder.toMap();
     
-    // FIX: Remove the ID column from the map to prevent Sqflite from trying 
+    // Remove the ID column from the map to prevent Sqflite from trying 
     // to update the primary key to NULL, which causes the datatype mismatch.
     updateMap.remove(colId);
 
-    // Note: DatasetFolder.toMap() converts List<String> images to a comma-separated String
+    // DatasetFolder.toMap() converts List<String> images to a comma-separated String
     await db.update(
       datasetsTable,
       updateMap, // Pass the map without the ID

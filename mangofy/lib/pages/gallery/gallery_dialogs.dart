@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'gallery_page.dart';
 
-/// Type definition for the callback when a new album is created
+// Type definition for the callback when a new album is created
 typedef AlbumCreationCallback =
     void Function(String albumName, List<String> selectedImageIds);
 
-/// Type definition for the callback when an album name is updated
+// Type definition for the callback when an album name is updated
 typedef AlbumUpdateCallback = void Function(String oldName, String newName);
 
-/// Type definition for the callback when an album is deleted
+// Type definition for the callback when an album is deleted
 typedef AlbumDeletionCallback = void Function(String albumName);
 
-/// Static class to manage all dialogs and navigation logic for album creation
+// Static class to manage all dialogs and navigation logic for album creation
 class GalleryDialogs {
-  /// Shows a dialog to create a new album
+  // Shows a dialog to create a new album
   static void showCreateAlbumDialog(
     BuildContext parentContext,
     AlbumCreationCallback onAlbumCreated,
@@ -137,7 +137,7 @@ class GalleryDialogs {
     );
   }
 
-  /// Opens selection page to add images to a new album
+  // Opens selection page to add images to a new album
   static void _navigateToSelectionForAlbum(
     BuildContext activeContext,
     String albumName,
@@ -167,10 +167,10 @@ class GalleryDialogs {
     }
   }
 
-  /// Shows a confirmation dialog for deletion
+  // Shows a confirmation dialog for deletion
   static void showDeleteConfirmationDialog(
     BuildContext context,
-    String itemType, // 'Photo' or 'Album'
+    String itemType,
     String itemName,
     VoidCallback onDeleteConfirmed,
   ) {
@@ -200,7 +200,7 @@ class GalleryDialogs {
     );
   }
 
-  /// Shows a dialog to edit an album's name
+  // Shows a dialog to edit an album's name
   static void showEditAlbumNameDialog(
     BuildContext context,
     String currentName,

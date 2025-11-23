@@ -1,5 +1,3 @@
-// gallery_page.dart (Modified)
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'my_trees_page.dart';
@@ -173,7 +171,7 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  /// Handles album long press for edit/delete options
+  // Handles album long press for edit/delete options
   void _handleAlbumLongPress(MyTree album) {
     showModalBottomSheet(
       context: context,
@@ -214,7 +212,7 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  /// Handles album name update
+  // Handles album name update
   void _handleAlbumNameUpdate(String oldName, String newName) async {
     await DatabaseService.instance.updateMyTreeTitle(oldName, newName);
     await _loadMyTreesFromDb();
@@ -226,7 +224,7 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  /// Handles album deletion
+  // Handles album deletion
   void _handleAlbumDeletion(String albumName) async {
     await DatabaseService.instance.deleteMyTree(albumName);
     await _loadMyTreesFromDb();
@@ -246,10 +244,10 @@ class _GalleryPageState extends State<GalleryPage> {
 
     if (!widget.isSelectionMode) {
       return isPhotosView
-          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress) // Pass handler
+          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress) 
           : MyTreesPage(
               albums: myTreesAlbums,
-              onAlbumLongPress: _handleAlbumLongPress, // Pass handler
+              onAlbumLongPress: _handleAlbumLongPress,
             ); 
     }
 

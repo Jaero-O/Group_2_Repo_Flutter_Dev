@@ -10,10 +10,10 @@ typedef FolderCreationCallback =
 // Type definition for actions on an existing folder
 enum FolderAction { rename, delete }
 
-/// A set of static methods to manage all dialogs and navigation logic
-/// for creating a new dataset folder.
+// A set of static methods to manage all dialogs and navigation logic
+// for creating a new dataset folder.
 class DatasetDialogs {
-  /// Shows a dialog to select source images when creating a new dataset
+  // Shows a dialog to select source images when creating a new dataset
   static void showCreateFolderDialog(
     BuildContext parentContext,
     FolderCreationCallback onFolderCreated,
@@ -96,7 +96,7 @@ class DatasetDialogs {
     );
   }
 
-  /// Shows a dialog for entering/editing a folder name
+  // Shows a dialog for entering/editing a folder name
   static Future<String?> _showNameInputDialog(
     BuildContext context, {
     required String title,
@@ -216,7 +216,7 @@ class DatasetDialogs {
     );
   }
 
-  /// Shows a dialog for entering the new folder name
+  // Shows a dialog for entering the new folder name
   static Future<String?> _showFolderNameDialog(BuildContext context) async {
     return _showNameInputDialog(
       context,
@@ -225,7 +225,7 @@ class DatasetDialogs {
     );
   }
 
-  /// Shows a dialog for renaming an existing folder
+  // Shows a dialog for renaming an existing folder
   static Future<String?> showRenameFolderDialog(
     BuildContext context,
     String currentName,
@@ -240,7 +240,7 @@ class DatasetDialogs {
   }
 
 
-  /// Shows a dialog to choose between renaming or deleting a dataset folder
+  // Shows a dialog to choose between renaming or deleting a dataset folder
   static Future<FolderAction?> showFolderActionDialog(
     BuildContext context,
     String folderName,

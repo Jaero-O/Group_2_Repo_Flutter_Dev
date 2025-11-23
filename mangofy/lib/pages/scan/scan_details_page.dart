@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class ScanDetailsPage extends StatelessWidget {
-  // Required scan details passed when opening this page
   final String scanTitle;      // Title of the scan
   final String disease;        // Detected disease name (anthracnose, other disease)
   final String dateScanned;    // Date of scan
@@ -29,13 +28,13 @@ class ScanDetailsPage extends StatelessWidget {
   // Custom app bar with back button and page title
   Widget _buildCustomAppBar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 40, 16, 16), // Top padding for status bar
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 16), 
       alignment: Alignment.centerLeft,
       child: Row(
         children: [
           // Back button
           GestureDetector(
-            onTap: () => Navigator.pop(context), // Navigate back
+            onTap: () => Navigator.pop(context), 
             child: Row(
               children: [
                 const Icon(Icons.arrow_back_ios, color: Color(0xFF48742C), size: 20),
@@ -69,7 +68,7 @@ class ScanDetailsPage extends StatelessWidget {
 
   // Build a colored disease tag
   Widget _buildDiseaseTag(String disease) {
-    final Color tagBackgroundColor = severityColor.withValues(alpha: 0.2); // Light background based on severity
+    final Color tagBackgroundColor = severityColor.withValues(alpha: 0.2); 
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -92,7 +91,7 @@ class ScanDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Page background color
+      backgroundColor: Colors.white,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

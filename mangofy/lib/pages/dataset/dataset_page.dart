@@ -1,12 +1,10 @@
-// dataset_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dataset_constants.dart';
 import 'dataset_dialogs.dart';
 import 'dataset_widgets.dart'; 
-import '../../services/database_service.dart'; // Added database import
-import '../../model/dataset_folder_model.dart'; // Added model import
+import '../../services/database_service.dart'; 
+import '../../model/dataset_folder_model.dart'; 
 
 // The DatasetPage widget displays a list of dataset folders
 // and allows users to create new datasets by selecting images.
@@ -192,7 +190,7 @@ class _DatasetPageState extends State<DatasetPage> {
                                   ),
                                 );
                               },
-                              // NEW: Long press to trigger action dialog
+                              // Long press to trigger action dialog
                               onLongPress: () => _handleFolderAction(folder.name),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,21 +237,15 @@ class _DatasetPageState extends State<DatasetPage> {
           (String finalFolderName, List<String> selectedImages) async {
             if (!mounted) return;
 
-            // 1. Save the new folder to the database
+            // Save the new folder to the database
             await DatabaseService.instance.insertDatasetFolder(
               name: finalFolderName,
               imageIds: selectedImages,
               dateCreated: DateTime.now().toIso8601String(), // Store creation date
             );
 
-            // 2. Reload the list from the database to update the UI
+            // Reload the list from the database to update the UI
             _loadFolders();
-            
-            // The pendingFolderName state is not strictly needed for this file anymore, 
-            // but can be kept if relevant for other state logic.
-            // setState(() {
-            //   pendingFolderName = null;
-            // });
           },
         ),
         child: const Icon(Icons.create_new_folder, color: Colors.white),

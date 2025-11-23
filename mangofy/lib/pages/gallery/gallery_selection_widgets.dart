@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
-/// Grid widget for selecting photos in selection mode
+// Grid widget for selecting photos in selection mode
 class PhotosSelectionGrid extends StatelessWidget {
-  /// Key representing current content (AllPhotos or album name)
+  // Key representing current content (AllPhotos or album name)
   final String contentKey;
 
-  /// List of all image IDs in the current view
+  // List of all image IDs in the current view
   final List<String> allImageIds;
 
-  /// Currently selected images
+  // Currently selected images
   final List<String> selectedImages;
 
-  /// Callback for toggling selection of an image
+  // Callback for toggling selection of an image
   final ValueChanged<String> onToggleSelection;
 
   const PhotosSelectionGrid({

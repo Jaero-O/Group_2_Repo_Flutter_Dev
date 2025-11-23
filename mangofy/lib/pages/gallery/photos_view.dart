@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart';
-import 'gallery_dialogs.dart'; // Import dialogs for long press actions
+import 'gallery_dialogs.dart'; 
 
 // Widget that displays a grid or list of photos depending on the view mode.
 // Supports four view modes: 'All Photos', 'Years', 'Months', or 'Days'.
 class PhotoGridContent extends StatelessWidget {
-  /// Current view mode: 'All Photos', 'Years', 'Months', or 'Days'
+  // Current view mode: 'All Photos', 'Years', 'Months', or 'Days'
   final String viewMode;
 
-  /// Callback for when a photo is long-pressed (for deletion/options)
+  // Callback for when a photo is long-pressed (for deletion/options)
   final ValueChanged<String>? onPhotoLongPress;
 
   const PhotoGridContent({
     super.key,
     this.viewMode = 'All Photos',
-    this.onPhotoLongPress, // Initialize new property
+    this.onPhotoLongPress, 
   });
 
   // Helper method to navigate to the full screen view
@@ -29,7 +29,7 @@ class PhotoGridContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // --- "All Photos" view ---
+    // "All Photos" view 
     if (viewMode == 'All Photos') {
       const int count = 40;
       final List<String> allPhotos = List.generate(count, (i) => 'AllPhotos_photo_$i');
@@ -51,13 +51,13 @@ class PhotoGridContent extends StatelessWidget {
           if (onPhotoLongPress != null) {
             onPhotoLongPress!(allPhotos[index]);
           } else {
-            // Default action if no handler is provided (e.g., in a non-deletion context)
+            // Default action if no handler is provided 
             GalleryDialogs.showDeleteConfirmationDialog(
               context,
               'Photo',
               allPhotos[index],
               () {
-                // In a real app, this would call a service to delete the photo
+                // This would call a service to delete the photo
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Photo ${allPhotos[index]} marked for deletion!'),
@@ -69,16 +69,16 @@ class PhotoGridContent extends StatelessWidget {
         },
       );
     } else {
-    // --- Grouped views (Years, Months, or Days) ---
+    // Grouped views (Years, Months, or Days)
       return ListView(
         padding: const EdgeInsets.all(12),
-        children: _buildGroupedSections(context), // Pass context here
+        children: _buildGroupedSections(context),
       );
     }
   }
 
   // Builds sections for the grouped views (Years, Months, Days)
-  List<Widget> _buildGroupedSections(BuildContext context) { // Accept context
+  List<Widget> _buildGroupedSections(BuildContext context) { 
     final yearData = {
       '2025': {
         'December': ['01', '02', '05'],
@@ -118,7 +118,7 @@ class PhotoGridContent extends StatelessWidget {
                         fontSize: 20, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
-                  _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
+                  _buildPhotoGrid(context, count, currentPhotos), 
                 ],
               ),
             ),
@@ -142,7 +142,7 @@ class PhotoGridContent extends StatelessWidget {
                         const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
+                  _buildPhotoGrid(context, count, currentPhotos), 
                 ],
               ),
             ),
@@ -167,7 +167,7 @@ class PhotoGridContent extends StatelessWidget {
                           fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    _buildPhotoGrid(context, count, currentPhotos), // Pass context and photos
+                    _buildPhotoGrid(context, count, currentPhotos),
                   ],
                 ),
               ),
@@ -211,7 +211,7 @@ class PhotoGridContent extends StatelessWidget {
             'Photo',
             imageIds[index],
             () {
-              // In a real app, this would call a service to delete the photo
+              // This would call a service to delete the photo
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Photo ${imageIds[index]} marked for deletion!'),
@@ -227,12 +227,12 @@ class PhotoGridContent extends StatelessWidget {
 
 // Main widget for displaying photos with a bottom view mode selector
 class PhotosView extends StatefulWidget {
-  // New property for photo long press, passed from GalleryPage
+  // Property for photo long press, passed from GalleryPage
   final ValueChanged<String>? onPhotoLongPress; 
 
   const PhotosView({
     super.key,
-    this.onPhotoLongPress, // Initialize new property
+    this.onPhotoLongPress,
   });
 
   @override
@@ -251,7 +251,7 @@ class _PhotosViewState extends State<PhotosView> {
         Positioned.fill(
           child: PhotoGridContent(
             viewMode: viewMode,
-            onPhotoLongPress: widget.onPhotoLongPress, // Pass handler down
+            onPhotoLongPress: widget.onPhotoLongPress, 
           ),
         ),
 

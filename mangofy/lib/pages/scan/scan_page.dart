@@ -48,7 +48,7 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _seedDummyDataIfEmpty() async {
     final dbRecords = await DatabaseService.instance.getAllScans();
     if (dbRecords.isEmpty) {
-      // NOTE: Using `DateTime.now()` to create sortable date strings instead of fixed ones.
+      // Using `DateTime.now()` to create sortable date strings instead of fixed ones.
       final now = DateTime.now();
       final List<Map<String, dynamic>> dummyData = [
         {'value': 0.1, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 1)))},
@@ -81,7 +81,7 @@ class _ScanPageState extends State<ScanPage> {
     _loadScanHistory();
   }
   
-  // Simple date formatter (to match original dummy data style, but use actual date)
+  // Simple date formatter
   String _formatDate(DateTime date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
@@ -104,13 +104,13 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  // --- Filtering and Sorting Logic ---
+  // Filtering and Sorting Logic
 
   void _applySortAndFilter() {
-    // 1. Start with the full history list
+    // Start with the full history list
     List<ScanRecord> filteredList = List.from(_scanHistory);
 
-    // 2. Apply Filtering
+    // Apply Filtering
     if (_currentFilter != FilterOption.all) {
       final String filterStatus = _currentFilter.toString().split('.').last;
       filteredList = filteredList
@@ -118,17 +118,15 @@ class _ScanPageState extends State<ScanPage> {
           .toList();
     }
 
-    // 3. Apply Sorting
+    // Apply Sorting
     filteredList.sort((a, b) {
       switch (_currentSort) {
         case SortOption.dateNewest:
-          // To sort Newest First (Descending by ID): b.id > a.id (Corrected logic from the previous turn, keeping it reversed as per user report)
-          // Since the user reported it was reversed, we swap the comparison order.
+          // To sort Newest First (Descending by ID): b.id > a.id 
           return a.id.compareTo(b.id); 
 
         case SortOption.dateOldest:
-          // To sort Oldest First (Ascending by ID): a.id < b.id (Corrected logic from the previous turn, keeping it reversed as per user report)
-          // Since the user reported it was reversed, we swap the comparison order.
+          // To sort Oldest First (Ascending by ID): a.id < b.id 
           return b.id.compareTo(a.id);
 
         case SortOption.severityHigh:
@@ -146,7 +144,7 @@ class _ScanPageState extends State<ScanPage> {
     });
   }
 
-  // --- UI Methods for Sort/Filter Selection ---
+  // UI Methods for Sort/Filter Selection 
 
   void _showSortOptions() {
     showModalBottomSheet(
@@ -262,13 +260,13 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate Summary Stats (always based on the full history, not the display list)
+    // Calculate Summary Stats 
     final int totalScans = _scanHistory.length;
     // Count items where status is explicitly 'Healthy'
     final int healthyScans = _scanHistory
         .where((record) => record.status == 'Healthy')
         .length;
-    // Infected is everything else (Moderate + Severe)
+    // Infected - Moderate + Severe
     final int infectedScans = totalScans - healthyScans;
 
     return Scaffold(

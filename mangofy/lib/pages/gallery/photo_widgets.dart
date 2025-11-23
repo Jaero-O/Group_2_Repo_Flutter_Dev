@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Page that displays a single photo in full screen with a close button.
+// Displays a single photo in full screen with a close button.
 class FullScreenPhotoView extends StatelessWidget {
   // Currently, we'll display a large placeholder as we don't have actual image loading.
   final String imagePath;
@@ -17,7 +17,7 @@ class FullScreenPhotoView extends StatelessWidget {
       backgroundColor: Colors.black, 
       body: Stack(
         children: [
-          // Photo Display Area (Placeholder)
+          // Photo Display Area 
           Center(
             child: Container(
               // Placeholder for the actual image. Display the ID for context.
@@ -46,7 +46,7 @@ class FullScreenPhotoView extends StatelessWidget {
           
           // Close Button
           Positioned(
-            top: 40, // Below status bar
+            top: 40, 
             right: 16,
             child: SafeArea(
               child: IconButton(
@@ -61,11 +61,10 @@ class FullScreenPhotoView extends StatelessWidget {
   }
 }
 
-/// A reusable grid item widget for displaying a generic photo placeholder.
+// A reusable grid item widget for displaying a generic photo placeholder.
 class PhotoGridItemPlaceholder extends StatelessWidget {
   final double iconSize;
   final double borderRadius;
-  // Removed onTap from here, it's now handled by the wrapper
 
   const PhotoGridItemPlaceholder({
     super.key,
@@ -89,7 +88,7 @@ class PhotoGridItemPlaceholder extends StatelessWidget {
   }
 }
 
-/// A wrapper to add tap and long press functionality to a grid item.
+// A wrapper to add tap and long press functionality to a grid item.
 class LongPressableGridItemPlaceholder extends StatelessWidget {
   final double iconSize;
   final double borderRadius;
@@ -111,13 +110,13 @@ class LongPressableGridItemPlaceholder extends StatelessWidget {
     // Wrapped with GestureDetector to handle taps and long presses
     return GestureDetector( 
       onTap: onTap,
-      onLongPress: onLongPress, // Handle long press
+      onLongPress: onLongPress, 
       child: child,
     );
   }
 }
 
-/// A reusable widget to display a grid of photo placeholders.
+// A reusable widget to display a grid of photo placeholders.
 class PhotoGridPlaceholder extends StatelessWidget {
   final int itemCount;
   final int crossAxisCount;
@@ -128,11 +127,11 @@ class PhotoGridPlaceholder extends StatelessWidget {
   final bool shrinkWrap;
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
-  // New property for tap handler
+  // Property for tap handler
   final ValueChanged<int>? onItemTap; 
-  // New property for long press handler
+  // Property for long press handler
   final ValueChanged<int>? onItemLongPress; 
-  // List of placeholder image IDs (used to pass context to the full screen view)
+  // List of placeholder image IDs - used to pass context to the full screen view
   final List<String> imageIds; 
 
   const PhotoGridPlaceholder({
@@ -147,8 +146,8 @@ class PhotoGridPlaceholder extends StatelessWidget {
     this.physics,
     this.padding = EdgeInsets.zero,
     this.onItemTap,
-    this.onItemLongPress, // Initialize new property
-    this.imageIds = const [], // Initialize new property
+    this.onItemLongPress, 
+    this.imageIds = const [],
   });
 
   @override
