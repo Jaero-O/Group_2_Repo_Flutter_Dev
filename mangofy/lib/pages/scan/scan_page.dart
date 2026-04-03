@@ -4,6 +4,8 @@ import 'scan_details_page.dart';
 import 'scan_constants.dart';
 import '../../ui/green_header_background.dart';
 import '../../services/database_service.dart';
+import '../../services/hotspot_service.dart';
+import '../../services/sync_service.dart';
 import '../../model/scan_model.dart';
 
 // Displays history of leaf scans, fetching data from the database.
@@ -22,6 +24,8 @@ class _ScanPageState extends State<ScanPage> {
   List<ScanRecord> _scanHistory = [];
   List<ScanRecord> _displayScanHistory = []; // The list shown to the user
   bool _isLoading = true;
+  String _syncStatus = 'Idle';
+  String _piStatus = 'Disconnected';
 
   // Sort and Filter state
   SortOption _currentSort = SortOption.dateNewest;
@@ -31,60 +35,56 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _seedDummyDataIfEmpty();
+    _performAutoSync();
   }
 
-  // Helper to determine status based on severity value
-  String _getStatusFromValue(double value) {
-    if (value > 40.0) {
-      return 'Severe';
-    } else if (value > 5.0) {
-      return 'Moderate';
-    } else {
-      return 'Healthy';
+  Future<void> _performAutoSync() async {
+    setState(() {
+      _syncStatus = 'Attempting Pi connection...';
+    });
+
+    final connected = await HotspotService.instance.connectPiHotspot();
+    if (!connected) {
+      setState(() {
+        _syncStatus = 'Unable to connect to Pi hotspot';
+        _piStatus = 'Disconnected';
+      });
+      return;
+    }
+
+    setState(() {
+      _syncStatus = 'Hotspot connected. Verifying Pi status...';
+      _piStatus = 'Connected to Pi-Proto-Net';
+    });
+
+    final verified = await HotspotService.instance.verifyPi();
+    if (!verified) {
+      setState(() {
+        _syncStatus = 'Pi API unreachable';
+      });
+      return;
+    }
+
+    setState(() {
+      _syncStatus = 'Pi verified. Syncing data...';
+    });
+
+    try {
+      await SyncService.instance.sync();
+      await _loadScanHistory();
+      setState(() {
+        _syncStatus = 'Sync complete';
+      });
+    } catch (e) {
+      setState(() {
+        _syncStatus = 'Sync failed: $e';
+      });
     }
   }
 
-  // Seeds dummy data if the database is empty, then loads the history.
+  // Loads the scan history without inserting placeholder data.
   Future<void> _seedDummyDataIfEmpty() async {
-    final dbRecords = await DatabaseService.instance.getAllScans();
-    if (dbRecords.isEmpty) {
-      // Using `DateTime.now()` to create sortable date strings instead of fixed ones.
-      final now = DateTime.now();
-      final List<Map<String, dynamic>> dummyData = [
-        {'value': 0.1, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 1)))},
-        {'value': 50.1, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 2)))},
-        {'value': 89.2, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 3)))},
-        {'value': 4.5, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 4)))},
-        {'value': 25.8, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 5)))},
-        {'value': 95.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 6)))},
-        {'value': 1.2, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 7)))},
-        {'value': 62.3, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 8)))},
-        {'value': 15.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 9)))},
-        {'value': 0.5, 'disease': 'Healthy', 'date': _formatDate(now.subtract(const Duration(days: 10)))},
-        {'value': 80.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 11)))},
-        {'value': 10.5, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 12)))},
-        {'value': 45.0, 'disease': 'Anthracnose', 'date': _formatDate(now.subtract(const Duration(days: 13)))},
-      ];
-
-      for (var data in dummyData) {
-        final double severityValue = (data['value'] as num).toDouble();
-        final String status = _getStatusFromValue(severityValue);
-
-        await DatabaseService.instance.insertScan(
-          disease: data['disease'] as String,
-          severityValue: severityValue,
-          status: status,
-          date: data['date'] as String,
-        );
-      }
-    }
-    _loadScanHistory();
-  }
-  
-  // Simple date formatter
-  String _formatDate(DateTime date) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+    await _loadScanHistory();
   }
 
   // Loads all scan records from the database.
@@ -150,7 +150,7 @@ class _ScanPageState extends State<ScanPage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
       ),
       builder: (BuildContext context) {
         return _buildOptionsSheet<SortOption>(
@@ -178,7 +178,7 @@ class _ScanPageState extends State<ScanPage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
       ),
       builder: (BuildContext context) {
         return _buildOptionsSheet<FilterOption>(
@@ -209,50 +209,66 @@ class _ScanPageState extends State<ScanPage> {
     required Function(T) onSelect,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16.0),
+      decoration: const BoxDecoration(
+      color: Colors.white, 
+      borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+      ),
+      // Top padding for the title, bottom padding for safe area spacing
+      padding: const EdgeInsets.fromLTRB(32, 14, 32, 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Centered Title
           Text(
             title,
+            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              fontSize: 20,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: const Color(0xFF005200),
             ),
           ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
           const SizedBox(height: 8),
-          const Divider(),
+          
           ...options.entries.map((entry) {
             final option = entry.key;
             final label = entry.value;
             final isSelected = option == currentOption;
 
-            return InkWell(
-              onTap: () => onSelect(option),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected ? const Color(0xFF007700) : Colors.black87,
-                        ),
-                      ),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 0.5),
+              child: InkWell(
+                onTap: () => onSelect(option),
+                borderRadius: BorderRadius.circular(12),
+                // Hover/Pressed feedback color
+                highlightColor: Colors.grey.withOpacity(0.1),
+                splashColor: Colors.grey.withOpacity(0.05),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  decoration: BoxDecoration(
+                    // Highlight with gray when selected
+                    color: isSelected 
+                        ? Colors.grey[200]
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 19,
+                      // Bold and Green text if selected, otherwise normal
+                      // fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      // color: isSelected ? const Color(0xFF007700) : Colors.black87,
                     ),
-                    if (isSelected)
-                      const Icon(Icons.check, color: Color(0xFF007700), size: 20),
-                  ],
+                  ),
                 ),
               ),
             );
           }).toList(),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -283,8 +299,8 @@ class _ScanPageState extends State<ScanPage> {
               bottom: false,
               child: Padding(
                 padding: const EdgeInsets.only(top: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
                       'Scan History',
@@ -292,6 +308,14 @@ class _ScanPageState extends State<ScanPage> {
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Wi-Fi: $_piStatus · Sync: $_syncStatus',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white70,
                       ),
                     ),
                   ],
@@ -326,13 +350,31 @@ class _ScanPageState extends State<ScanPage> {
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : _displayScanHistory.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No scans matching the current filter.',
-                              style: GoogleFonts.inter(color: Colors.grey[500]),
-                            ),
-                          )
-                        : ListView.separated(
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      _scanHistory.isEmpty
+                                          ? 'No scans yet. Automatic sync in progress.'
+                                          : 'No scans matching the current filter.',
+                                      style: GoogleFonts.inter(color: Colors.grey[500]),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'State: $_syncStatus',
+                                      style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 12),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    ElevatedButton(
+                                      onPressed: _performAutoSync,
+                                      child: const Text('Retry sync'),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.separated(
                             itemCount: _displayScanHistory.length,
                             padding: EdgeInsets.fromLTRB(
                               16,

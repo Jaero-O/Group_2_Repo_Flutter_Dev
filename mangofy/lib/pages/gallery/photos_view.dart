@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart';
-import 'gallery_dialogs.dart'; 
+import 'gallery_dialogs.dart';
+import '../../model/photo.dart'; 
 
 // Widget that displays a grid or list of photos depending on the view mode.
 // Supports four view modes: 'All Photos', 'Years', 'Months', or 'Days'.
@@ -11,18 +12,21 @@ class PhotoGridContent extends StatelessWidget {
   // Callback for when a photo is long-pressed (for deletion/options)
   final ValueChanged<String>? onPhotoLongPress;
 
+  final List<Photo> photos;
+
   const PhotoGridContent({
     super.key,
     this.viewMode = 'All Photos',
-    this.onPhotoLongPress, 
+    this.onPhotoLongPress,
+    required this.photos,
   });
 
   // Helper method to navigate to the full screen view
-  void _openFullScreenView(BuildContext context, String imagePath) {
+  void _openFullScreenView(BuildContext context, String imagePath, [Photo? photo]) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenPhotoView(imagePath: imagePath),
+        builder: (context) => FullScreenPhotoView(imagePath: imagePath, photo: photo),
       ),
     );
   }
@@ -31,36 +35,31 @@ class PhotoGridContent extends StatelessWidget {
   Widget build(BuildContext context) {
     // "All Photos" view 
     if (viewMode == 'All Photos') {
-      const int count = 40;
-      final List<String> allPhotos = List.generate(count, (i) => 'AllPhotos_photo_$i');
-
-      return PhotoGridPlaceholder(
-        itemCount: count,
-        imageIds: allPhotos,
+      return PhotoGrid(
+        photos: photos,
         crossAxisCount: 4,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
         padding: const EdgeInsets.all(4),
         borderRadius: 4, 
-        iconSize: 40,
         onItemTap: (index) {
-          _openFullScreenView(context, allPhotos[index]);
+          _openFullScreenView(context, photos[index].id.toString(), photos[index]);
         },
         // Handle long press on photo
         onItemLongPress: (index) {
           if (onPhotoLongPress != null) {
-            onPhotoLongPress!(allPhotos[index]);
+            onPhotoLongPress!(photos[index].id.toString());
           } else {
             // Default action if no handler is provided 
             GalleryDialogs.showDeleteConfirmationDialog(
               context,
               'Photo',
-              allPhotos[index],
+              photos[index].id.toString(),
               () {
                 // This would call a service to delete the photo
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Photo ${allPhotos[index]} marked for deletion!'),
+                    content: Text('Photo ${photos[index].name} marked for deletion!'),
                   ),
                 );
               },
@@ -228,11 +227,13 @@ class PhotoGridContent extends StatelessWidget {
 // Main widget for displaying photos with a bottom view mode selector
 class PhotosView extends StatefulWidget {
   // Property for photo long press, passed from GalleryPage
-  final ValueChanged<String>? onPhotoLongPress; 
+  final ValueChanged<String>? onPhotoLongPress;
+  final List<Photo> photos;
 
   const PhotosView({
     super.key,
     this.onPhotoLongPress,
+    required this.photos,
   });
 
   @override
@@ -251,7 +252,8 @@ class _PhotosViewState extends State<PhotosView> {
         Positioned.fill(
           child: PhotoGridContent(
             viewMode: viewMode,
-            onPhotoLongPress: widget.onPhotoLongPress, 
+            onPhotoLongPress: widget.onPhotoLongPress,
+            photos: widget.photos,
           ),
         ),
 
@@ -272,7 +274,7 @@ class _PhotosViewState extends State<PhotosView> {
                   ),
                 ],
               ),
-              margin: const EdgeInsets.symmetric(horizontal: 30),
+              margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,

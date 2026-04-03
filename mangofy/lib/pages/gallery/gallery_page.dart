@@ -5,17 +5,13 @@ import 'photos_view.dart';
 import 'gallery_selection_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
 import '../../services/database_service.dart';
-import '../../model/my_tree_model.dart'; 
+import '../../services/sync_service.dart';
+import '../../model/my_tree_model.dart';
+import '../../model/photo.dart'; 
 
-// Page for viewing photos, albums, and optionally selecting images.
 class GalleryPage extends StatefulWidget {
-  // If true, page is in selection mode for picking images
   final bool isSelectionMode;
-
-  // Initial view mode: 'My Trees' or null
   final String? initialMode;
-
-  // Callback when selection is done (returns list of selected image IDs)
   final Function(List<String>)? onSelectionDone;
 
   const GalleryPage({
@@ -30,181 +26,150 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> {
-  // True if displaying photos; false if displaying albums ('My Trees')
   bool isPhotosView = true;
-
-  // List of selected image IDs in selection mode
   final List<String> selectedImages = [];
-
-  // Album currently selected in selection mode
   String? selectedAlbumTitle;
-
-  /// List of user's albums for 'My Trees'
   List<MyTree> myTreesAlbums = [];
-
-  // Method to load My Trees from the database
-  Future<void> _loadMyTreesFromDb() async {
-    final myTrees = await DatabaseService.instance.getAllMyTrees(); 
-    setState(() {
-      myTreesAlbums = myTrees;
-    });
-  }
-  
-  // Generates a list of current image IDs based on view
-  List<String> _getCurrentImageIds() {
-    final String contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
-    final int itemCount = contentKey == 'AllPhotos' ? 40 : 15;
-    return List<String>.generate(
-      itemCount,
-      (index) => '${contentKey}_photo_$index',
-    );
-  }
+  List<Photo> photos = [];
 
   @override
   void initState() {
     super.initState();
-    // Initialize view based on initial mode or selection mode
     if (widget.initialMode == 'My Trees') {
       isPhotosView = false;
     }
     if (widget.isSelectionMode && widget.initialMode == null) {
       isPhotosView = true;
     }
-
-    _loadMyTreesFromDb();
+    _loadData();
+    SyncService.instance.lastSyncNotifier.addListener(_loadData);
   }
 
-  String _getAppBarTitle() {
-    if (!widget.isSelectionMode) {
-      return isPhotosView ? 'Gallery' : 'My Trees';
-    }
-    if (isPhotosView) {
-      return 'Select Images';
-    } else {
-      if (selectedAlbumTitle == null) {
-        return 'Select Album';
-      } else {
-        return 'Select from ${selectedAlbumTitle!}';
-      }
-    }
+  @override
+  void dispose() {
+    SyncService.instance.lastSyncNotifier.removeListener(_loadData);
+    super.dispose();
   }
 
-  // Toggles selection state of a single image
-  void _toggleSelection(String id) {
+  Future<void> _loadData() async {
+    final myTrees = await DatabaseService.instance.getAllMyTrees();
+    final photosData = await DatabaseService.instance.getAllPhotos();
     setState(() {
-      selectedImages.contains(id)
-          ? selectedImages.remove(id)
-          : selectedImages.add(id);
+      myTreesAlbums = myTrees;
+      photos = photosData.map((map) => Photo.fromMap(map)).toList();
     });
   }
-
-  // Selects or deselects all images currently displayed
-  void _toggleSelectAll() {
-    setState(() {
-      final currentImageIds = _getCurrentImageIds();
-      // Ensure we only check images in the current view
-      final allSelected = currentImageIds.every(selectedImages.contains);
-
-      if (allSelected) {
-        // Only remove images that are currently in view
-        selectedImages.removeWhere(currentImageIds.contains);
-      } else {
-        // Add all images currently in view
-        for (var id in currentImageIds) {
-          if (!selectedImages.contains(id)) {
-            selectedImages.add(id);
-          }
-        }
-      }
-    });
+  
+  // --- CUSTOM MODAL NOTIFICATION HELPER ---
+  void _showNotification(String message, {bool isDelete = false}) {
+    ScaffoldMessenger.of(context).removeCurrentSnackBar(); // Clear existing
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isDelete ? Icons.delete_outline : Icons.check_circle,
+              color: isDelete ? Colors.red : const Color(0xFF4CAF50),
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 200,
+          left: 20,
+          right: 20,
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
-  // Handles back button behavior based on mode
-  void _handleBackButton() {
-    if (!widget.isSelectionMode) {
-      Navigator.pop(context);
-      return;
-    }
-    if (!isPhotosView && selectedAlbumTitle != null) {
-      setState(() {
-        selectedAlbumTitle = null;
-      });
-    } else {
-      // In selection mode, if going back from main selection screen, pop with empty list
-      Navigator.pop(context, <String>[]);
-    }
-  }
+  // --- HANDLERS ---
 
-  /// Callback used by GalleryDialogs to update album list after creation
   void _handleAlbumCreation(String albumName, List<String> selectedImageIds) async {
     await DatabaseService.instance.insertMyTree( 
       title: albumName,
       location: 'New Album Location', 
       imageIds: selectedImageIds,
     );
-    
-    await _loadMyTreesFromDb();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Album "$albumName" created!'),
-        ),
-      );
+    await _loadData();
+    _showNotification('Tree "$albumName" created successfully!');
   }
-  
-  /// Handles photo long press for deletion (for simplicity, only shows dialog)
+
+  void _handleAlbumNameUpdate(String oldName, String newName) async {
+    await DatabaseService.instance.updateMyTreeTitle(oldName, newName);
+    await _loadData();
+    _showNotification('Tree renamed to "$newName"');
+  }
+
+  void _handleAlbumDeletion(String albumName) async {
+    await DatabaseService.instance.deleteMyTree(albumName);
+    await _loadData();
+    _showNotification('Tree "$albumName" deleted.', isDelete: true);
+  }
+
   void _handlePhotoLongPress(String imageId) {
-    GalleryDialogs.showDeleteConfirmationDialog(
-      context,
-      'Photo',
-      imageId,
-      () {
-        // In a real app, logic to delete the photo from DB/storage would go here
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Photo "$imageId" deleted!'),
-          ),
-        );
-        // Note: We don't call setState because we're using mock data and not deleting it
-        // from the list generation logic, but in a real app, you would reload/update the list.
-      },
-    );
-  }
-
-  // Handles album long press for edit/delete options
-  void _handleAlbumLongPress(MyTree album) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+      ),
       builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
               ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Rename'),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                leading: const Icon(Icons.edit, color: Colors.black87),
+                title: Text('Rename Photo', style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  GalleryDialogs.showEditAlbumNameDialog(
-                    context,
-                    album.title,
-                    _handleAlbumNameUpdate,
-                  );
+                  GalleryDialogs.showRenamePhotoDialog(context, imageId, (oldId, newName) {
+                    setState(() {
+                      _showNotification('Photo renamed to "$newName"');
+                    });
+                  });
                 },
               ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Divider(height: 1, thickness: 1.2, color: Color(0xFFE0E0E0)),
+              ),
               ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
                 leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('Delete Tree', style: TextStyle(color: Colors.red)),
-                onTap: () {
+                title: Text('Delete Photo', style: GoogleFonts.inter(color: Colors.red, fontWeight: FontWeight.w500)),
+                onTap: () async {
                   Navigator.pop(sheetContext);
-                  GalleryDialogs.showDeleteConfirmationDialog(
-                    context,
-                    'Tree',
-                    album.title,
-                    () => _handleAlbumDeletion(album.title),
-                  );
+                  GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', imageId, () async {
+                    await DatabaseService.instance.deletePhoto(int.parse(imageId));
+                    await _loadData();
+                    _showNotification('Photo deleted!', isDelete: true);
+                  });
                 },
               ),
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -212,53 +177,113 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  // Handles album name update
-  void _handleAlbumNameUpdate(String oldName, String newName) async {
-    await DatabaseService.instance.updateMyTreeTitle(oldName, newName);
-    await _loadMyTreesFromDb();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Tree "$oldName" renamed to "$newName".'),
+  void _handleAlbumLongPress(MyTree album) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
       ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                leading: const Icon(Icons.edit, color: Colors.black87),
+                title: Text('Rename Tree', style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  GalleryDialogs.showEditAlbumNameDialog(context, album.title, _handleAlbumNameUpdate);
+                },
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Divider(height: 1, thickness: 1.2, color: Color(0xFFE0E0E0)),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: Text('Delete Tree', style: GoogleFonts.inter(color: Colors.red, fontWeight: FontWeight.w500)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  GalleryDialogs.showDeleteConfirmationDialog(
+                    context, 'Tree', album.title, () => _handleAlbumDeletion(album.title),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  // Handles album deletion
-  void _handleAlbumDeletion(String albumName) async {
-    await DatabaseService.instance.deleteMyTree(albumName);
-    await _loadMyTreesFromDb();
+  // --- UTILS ---
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Tree "$albumName" deleted.'),
-      ),
-    );
+  List<String> _getCurrentImageIds() {
+    if (isPhotosView) {
+      return photos.map((photo) => photo.id.toString()).toList();
+    } else {
+      final String contentKey = selectedAlbumTitle!;
+      final int itemCount = 15;
+      return List<String>.generate(itemCount, (index) => '${contentKey}_photo_$index');
+    }
   }
 
+  String _getAppBarTitle() {
+    if (!widget.isSelectionMode) return isPhotosView ? 'Gallery' : 'My Trees';
+    return isPhotosView ? 'Select Images' : (selectedAlbumTitle ?? 'Select Album');
+  }
 
-  // Builds the main body content depending on mode
+  void _toggleSelection(String id) {
+    setState(() {
+      selectedImages.contains(id) ? selectedImages.remove(id) : selectedImages.add(id);
+    });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      final currentImageIds = _getCurrentImageIds();
+      final allSelected = currentImageIds.every(selectedImages.contains);
+      if (allSelected) {
+        selectedImages.removeWhere(currentImageIds.contains);
+      } else {
+        for (var id in currentImageIds) {
+          if (!selectedImages.contains(id)) selectedImages.add(id);
+        }
+      }
+    });
+  }
+
+  void _handleBackButton() {
+    if (!widget.isSelectionMode) {
+      Navigator.pop(context);
+      return;
+    }
+    if (!isPhotosView && selectedAlbumTitle != null) {
+      setState(() => selectedAlbumTitle = null);
+    } else {
+      Navigator.pop(context, <String>[]);
+    }
+  }
+
+  // --- BUILD METHODS ---
+
   Widget _buildBodyContent() {
-    final bool isPhotoSelectionScreen =
-        widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
-
+    final bool isPhotoSelectionScreen = widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
     if (!widget.isSelectionMode) {
       return isPhotosView
-          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress) 
-          : MyTreesPage(
-              albums: myTreesAlbums,
-              onAlbumLongPress: _handleAlbumLongPress,
-            ); 
+          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress, photos: photos) 
+          : MyTreesPage(albums: myTreesAlbums, onAlbumLongPress: _handleAlbumLongPress); 
     }
-
     if (isPhotoSelectionScreen) {
-      final contentKey = isPhotosView ? 'AllPhotos' : selectedAlbumTitle!;
-      final allImageIds = _getCurrentImageIds();
-
-      // In selection mode, long press is usually disabled or irrelevant
       return PhotosSelectionGrid(
-        contentKey: contentKey,
-        allImageIds: allImageIds,
+        contentKey: isPhotosView ? 'AllPhotos' : selectedAlbumTitle!,
+        allImageIds: _getCurrentImageIds(),
         selectedImages: selectedImages,
         onToggleSelection: _toggleSelection,
       );
@@ -266,45 +291,26 @@ class _GalleryPageState extends State<GalleryPage> {
       return MyTreesPage(
         albums: myTreesAlbums, 
         isSelectionMode: true,
-        onAlbumSelected: (title) {
-          setState(() {
-            selectedAlbumTitle = title;
-          });
-        },
-        // Long press for albums is not typically active in album selection mode
+        onAlbumSelected: (title) => setState(() => selectedAlbumTitle = title),
         onAlbumLongPress: null, 
       );
     }
   }
 
-  // Displays a small chip showing the count of selected images
   Widget _buildSelectedCountChip() {
-    if (!widget.isSelectionMode || selectedImages.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+    if (!widget.isSelectionMode || selectedImages.isEmpty) return const SizedBox.shrink();
     return Positioned(
-      top: 30,
-      right: 25,
+      top: 30, right: 25,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
         ),
         child: Text(
-          '${selectedImages.length} image${selectedImages.length == 1 ? '' : 's'} selected',
-          style: GoogleFonts.inter(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-          ),
+          '${selectedImages.length} selected',
+          style: GoogleFonts.inter(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -312,24 +318,10 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String toggleText = isPhotosView ? 'My Trees' : 'Photos';
-
-    final bool isPhotoSelectionScreen =
-        widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
-
-    final int totalImagesInView = isPhotoSelectionScreen
-        ? _getCurrentImageIds().length
-        : 0;
-
-    final bool allImagesSelected =
-        totalImagesInView > 0 &&
-        _getCurrentImageIds().every(selectedImages.contains);
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        leading: null,
         backgroundColor: Colors.white,
         elevation: 0,
         title: Row(
@@ -338,60 +330,39 @@ class _GalleryPageState extends State<GalleryPage> {
             Expanded(
               child: Text(
                 _getAppBarTitle(),
-                style: GoogleFonts.inter(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
+                style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black),
               ),
             ),
             if (!widget.isSelectionMode)
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    isPhotosView = !isPhotosView;
-                  });
-                },
+                onTap: () => setState(() => isPhotosView = !isPhotosView),
                 child: Row(
                   children: [
-                    if (!isPhotosView)
-                      const Icon(Icons.chevron_left, color: Colors.green),
+                    if (!isPhotosView) const Icon(Icons.chevron_left, color: Colors.green),
                     Text(
-                      toggleText,
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
+                      isPhotosView ? 'My Trees' : 'Photos',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
                     ),
-                    if (isPhotosView)
-                      const Icon(Icons.chevron_right, color: Colors.green),
+                    if (isPhotosView) const Icon(Icons.chevron_right, color: Colors.green),
                   ],
                 ),
               ),
           ],
         ),
-        actions: isPhotoSelectionScreen
+        actions: widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null)
             ? [
                 TextButton(
                   onPressed: _toggleSelectAll,
                   child: Text(
-                    allImagesSelected ? 'Deselect All' : 'Select All',
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
+                    _getCurrentImageIds().every(selectedImages.contains) ? 'Deselect All' : 'Select All',
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
                   ),
                 ),
                 const SizedBox(width: 8),
               ]
             : null,
       ),
-      body: Stack(children: [
-        _buildBodyContent(),
-        _buildSelectedCountChip()
-      ]),
+      body: Stack(children: [_buildBodyContent(), _buildSelectedCountChip()]),
       bottomNavigationBar: widget.isSelectionMode
           ? Padding(
               padding: const EdgeInsets.all(16),
@@ -400,37 +371,17 @@ class _GalleryPageState extends State<GalleryPage> {
                 children: [
                   TextButton(
                     onPressed: _handleBackButton,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.green,
-                      padding: EdgeInsets.zero,
-                      alignment: Alignment.centerLeft,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: Colors.green),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.chevron_left, size: 24),
-                        Text(
-                          (!isPhotosView && selectedAlbumTitle != null)
-                              ? 'Back to Albums'
-                              : 'Back',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                        const Icon(Icons.chevron_left),
+                        Text((!isPhotosView && selectedAlbumTitle != null) ? 'Back to Albums' : 'Back'),
                       ],
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: selectedImages.isEmpty
-                        ? null
-                        : () => widget.onSelectionDone != null
-                              ? widget.onSelectionDone!(selectedImages)
-                              : Navigator.pop(context, selectedImages),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0,
-                        vertical: 8.0,
-                      ),
-                    ),
+                    onPressed: selectedImages.isEmpty ? null : () => Navigator.pop(context, selectedImages),
+                    style: TextButton.styleFrom(foregroundColor: Colors.green),
                     icon: const Icon(Icons.save),
                     label: Text('Save (${selectedImages.length})'),
                   ),
@@ -441,9 +392,7 @@ class _GalleryPageState extends State<GalleryPage> {
       floatingActionButton: !widget.isSelectionMode && !isPhotosView
           ? FloatingActionButton(
               backgroundColor: Colors.green,
-              // Call the extracted static dialog method
-              onPressed: () => GalleryDialogs.showCreateAlbumDialog(
-                  context, _handleAlbumCreation),
+              onPressed: () => GalleryDialogs.showCreateAlbumDialog(context, _handleAlbumCreation),
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,

@@ -35,11 +35,18 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   font_awesome_flutter: ^10.6.0
-  flutter_svg: ^2.0.9
+  flutter_svg: ^2.2.1
   fl_chart: ^0.66.2
-  google_fonts: ^6.0.0
-  sqflite: ^2.3.3
-  path: ^1.9.0
+  google_fonts: ^6.3.2
+  sqflite: ^2.2.8+3
+  path: ^1.8.4
+  path_provider: ^2.0.15
+  mobile_scanner: ^4.0.0
+  http: ^1.1.0
+  connectivity_plus: ^4.0.2
+  wifi_iot: ^0.3.19+2
+  shared_preferences: ^2.0.20
+  crypto: ^3.0.2
 
 dev_dependencies:
   flutter_test:

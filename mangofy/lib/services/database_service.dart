@@ -15,6 +15,7 @@ class DatabaseService {
   static const String scanTable = "scan_history";
   static const String treesTable = "my_trees";
   static const String datasetsTable = "dataset_folders";
+  static const String photosTable = "photos";
 
   // Column names
   static const String colId = "id";
@@ -32,6 +33,10 @@ class DatabaseService {
   static const String colFolderImages = "images";
   static const String colDateCreated = "date_created";
 
+  static const String colPhotoData = "data";
+  static const String colPhotoName = "name";
+  static const String colPhotoTimestamp = "timestamp";
+
   // Public getter
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -45,7 +50,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 6, 
+      version: 7, 
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -81,6 +86,15 @@ class DatabaseService {
         $colDateCreated TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE $photosTable (
+        $colId INTEGER PRIMARY KEY AUTOINCREMENT,
+        $colPhotoName TEXT NOT NULL,
+        $colPhotoData TEXT NOT NULL,
+        $colPhotoTimestamp TEXT NOT NULL
+      )
+    ''');
   }
 
   // Upgrade / Migrations
@@ -106,6 +120,18 @@ class DatabaseService {
           $colFolderName TEXT NOT NULL UNIQUE,
           $colFolderImages TEXT NOT NULL,
           $colDateCreated TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // Migration for versions < 7: Create the photos table
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $photosTable (
+          $colId INTEGER PRIMARY KEY AUTOINCREMENT,
+          $colPhotoName TEXT NOT NULL,
+          $colPhotoData TEXT NOT NULL,
+          $colPhotoTimestamp TEXT NOT NULL
         )
       ''');
     }
@@ -340,6 +366,31 @@ class DatabaseService {
       where: "$colFolderName = ?",
       whereArgs: [folderName],
     );
+  }
+
+  // Photos
+  Future<int> insertPhoto({
+    required String name,
+    required String data,
+    required String timestamp,
+  }) async {
+    final db = await instance.database;
+
+    return await db.insert(photosTable, {
+      colPhotoName: name,
+      colPhotoData: data,
+      colPhotoTimestamp: timestamp,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> getAllPhotos() async {
+    final db = await instance.database;
+    return await db.query(photosTable, orderBy: "$colId DESC");
+  }
+
+  Future<int> deletePhoto(int id) async {
+    final db = await instance.database;
+    return db.delete(photosTable, where: "$colId = ?", whereArgs: [id]);
   }
 
   // DB Close / Reset

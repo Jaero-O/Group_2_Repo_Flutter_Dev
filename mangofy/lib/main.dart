@@ -4,33 +4,30 @@ import 'package:Mangofy/pages/home/home_page.dart';
 import 'package:Mangofy/pages/scan/scan_page.dart';
 import 'package:Mangofy/pages/gallery/gallery_page.dart';
 import 'package:Mangofy/pages/dataset/dataset_page.dart';
+import 'package:Mangofy/pages/scanner_page.dart';
 import 'splash_screen.dart'; 
 
-/// Entry point of the application.
 void main() {
   runApp(const MyApp());
 }
 
-/// Root widget of the application.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false, // Disable debug banner
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green), // Base color theme
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
       ),
       home: const SplashScreen(
-        targetPage: MyHomePage(), // Navigate to home page after splash
+        targetPage: MyHomePage(),
       ),
     );
   }
 }
 
-/// Main home page widget that contains bottom navigation
-/// and manages switching between app sections.
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
 
@@ -39,9 +36,9 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int currentPage = 0; // Index of the currently selected page
+  int navIndex = 0;
+  int pageIndex = 0;
 
-  /// List of pages corresponding to bottom navigation items
   final List<Widget> pages = const [
     HomePage(),
     ScanPage(),
@@ -49,114 +46,114 @@ class _MyHomePageState extends State<MyHomePage> {
     DatasetPage(),
   ];
 
-  static const Color selectedColor = Color(0xFF007700); // Color for selected navigation item
+  static const Color selectedColor = Color(0xFF007700);
+
+  void _openQrScanner() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ScannerPage()),
+    );
+  }
+
+  void _onDestinationSelected(int index) {
+    if (index == 2) return; // Spacer slot
+    setState(() {
+      navIndex = index;
+      pageIndex = index > 2 ? index - 1 : index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF555555), // App background color
-      body: pages[currentPage], // Display the currently selected page
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFFFAFAFA), // Bottom bar background
-        selectedIndex: currentPage, // Currently selected index
-        onDestinationSelected: (int index) {
-          // Update selected page when a navigation item is tapped
-          setState(() {
-            currentPage = index;
-          });
-        },
-        indicatorColor: Colors.transparent, // Remove default selection indicator
-        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
-          (Set<WidgetState> states) {
-            // Text style for selected and unselected labels
-            final color = states.contains(WidgetState.selected)
-                ? selectedColor
-                : Colors.grey;
-            return TextStyle(color: color);
-          },
-        ),
-        destinations: [
-          // Home navigation item
-          NavigationDestination(
-            icon: SvgPicture.asset(
-              'images/home.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
+      backgroundColor: const Color(0xFF555555),
+      body: pages[pageIndex],
+      bottomNavigationBar: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none, // Allows the button to overflow the top
+        children: [
+          // 1. The Actual Navigation Bar
+          NavigationBar(
+            height: 70, // Fixed height for the bar
+            backgroundColor: const Color(0xFFFAFAFA),
+            selectedIndex: navIndex,
+            onDestinationSelected: _onDestinationSelected,
+            indicatorColor: Colors.transparent,
+            labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
+              (Set<WidgetState> states) {
+                final color = states.contains(WidgetState.selected)
+                    ? selectedColor
+                    : Colors.grey;
+                return TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500);
+              },
             ),
-            selectedIcon: SvgPicture.asset(
-              'images/home.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(
-                selectedColor,
-                BlendMode.srcIn,
+            destinations: [
+              _buildNav('images/home.svg', 'Home'),
+              _buildNav('images/clipboard.svg', 'History'),
+              
+              // 2. Dummy Spacer Destination (index 2)
+              const NavigationDestination(
+                icon: SizedBox(height: 34),
+                label: '',
+                enabled: false,
               ),
-            ),
-            label: 'Home',
+
+              _buildNav('images/gallery.svg', 'Gallery'),
+              _buildNav('images/database.svg', 'Dataset'),
+            ],
           ),
 
-          // Scan navigation item
-          NavigationDestination(
-            icon: SvgPicture.asset(
-              'images/scan.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
-            ),
-            selectedIcon: SvgPicture.asset(
-              'images/scan.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(
-                selectedColor,
-                BlendMode.srcIn,
+          // 3. The Raised Scan Button
+          Positioned(
+            top: -25, // This lifts the button higher than the navbar
+            child: GestureDetector(
+              onTap: _openQrScanner,
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: selectedColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Color(0xFFFAFAFA), width: 3), // Optional ring
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: SvgPicture.asset(
+                    'images/qr_code.svg',
+                    height: 28,
+                    width: 28,
+                    colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                  ),
+                ),
               ),
             ),
-            label: 'Scan',
-          ),
-
-          // Gallery navigation item
-          NavigationDestination(
-            icon: SvgPicture.asset(
-              'images/gallery.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
-            ),
-            selectedIcon: SvgPicture.asset(
-              'images/gallery.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(
-                selectedColor,
-                BlendMode.srcIn,
-              ),
-            ),
-            label: 'Gallery',
-          ),
-
-          // Dataset navigation item
-          NavigationDestination(
-            icon: SvgPicture.asset(
-              'images/database.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
-            ),
-            selectedIcon: SvgPicture.asset(
-              'images/database.svg',
-              height: 34,
-              width: 34,
-              colorFilter: const ColorFilter.mode(
-                selectedColor,
-                BlendMode.srcIn,
-              ),
-            ),
-            label: 'Dataset',
           ),
         ],
       ),
+    );
+  }
+
+  // Helper method to keep destinations clean
+  NavigationDestination _buildNav(String asset, String label) {
+    return NavigationDestination(
+      icon: SvgPicture.asset(
+        asset,
+        height: 30,
+        width: 30,
+        colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.srcIn),
+      ),
+      selectedIcon: SvgPicture.asset(
+        asset,
+        height: 30,
+        width: 30,
+        colorFilter: const ColorFilter.mode(selectedColor, BlendMode.srcIn),
+      ),
+      label: label,
     );
   }
 }

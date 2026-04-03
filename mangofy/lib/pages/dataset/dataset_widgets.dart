@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../services/database_service.dart'; 
 
@@ -91,44 +92,95 @@ class _FolderViewPageState extends State<FolderViewPage> {
   }
 
   // Helper to show the delete confirmation dialog for an image
+ // Helper to show the delete confirmation dialog for an image
   void _showDeleteImageDialog(BuildContext context, String imageId) {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Image'),
-        content: Text('Are you sure you want to remove this image ($imageId) from the folder ${widget.folderName}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center, // Centered like Gallery
+              children: [
+                Text(
+                  'Delete Image?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to remove this image ($imageId) from the folder ${widget.folderName}?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text('Cancel', 
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+
+                          // Call DB service to remove the image
+                          await DatabaseService.instance.removeImageFromDatasetFolder(
+                            widget.folderName,
+                            imageId,
+                          );
+
+                          // Update the local state
+                          setState(() {
+                            _currentImages.remove(imageId);
+                          });
+
+                          // Notify parent
+                          widget.onImageRemoved();
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Image $imageId removed.')),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text('Delete', 
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext); 
-
-              // Call DB service to remove the image
-              await DatabaseService.instance.removeImageFromDatasetFolder(
-                widget.folderName,
-                imageId,
-              );
-
-              // Update the local state
-              setState(() {
-                _currentImages.remove(imageId);
-              });
-
-              // Notify the parent (DatasetPage) that the folder content changed
-              widget.onImageRemoved(); 
-
-              // Optionally show a confirmation snackbar
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Image $imageId removed from ${widget.folderName}')),
-              );
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -198,4 +250,4 @@ class _FolderViewPageState extends State<FolderViewPage> {
             ),
     );
   }
-}
+} 

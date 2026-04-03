@@ -3,17 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dataset_widgets.dart';
 import '../gallery/gallery_page.dart';
 
-/// Type definition for the callback when a folder is created.
-typedef FolderCreationCallback =
-    void Function(String finalFolderName, List<String> selectedImages);
-
-// Type definition for actions on an existing folder
+typedef FolderCreationCallback = void Function(String finalFolderName, List<String> selectedImages);
 enum FolderAction { rename, delete }
 
-// A set of static methods to manage all dialogs and navigation logic
-// for creating a new dataset folder.
 class DatasetDialogs {
-  // Shows a dialog to select source images when creating a new dataset
+  // --- CREATE NEW DATASET DIALOG (SOURCE SELECTION) ---
   static void showCreateFolderDialog(
     BuildContext parentContext,
     FolderCreationCallback onFolderCreated,
@@ -23,80 +17,66 @@ class DatasetDialogs {
       builder: (context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
-          title: Text(
-            'Create new dataset',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              Text(
-                'Select images from',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Option to select images from Gallery
-                  _buildFolderChoice(
-                    svgIcon: const SvgFolderIcon(size: 90),
-                    label: 'Gallery',
-                    onTap: () => _navigateToSelection(
-                      parentContext,
-                      null,
-                      onFolderCreated,
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  // Option to select images from My Trees
-                  _buildFolderChoice(
-                    svgIcon: const SvgFolderIcon(size: 90),
-                    label: 'My Trees',
-                    onTap: () => _navigateToSelection(
-                      parentContext,
-                      'My Trees',
-                      onFolderCreated,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-            ],
-          ),
-          actionsPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 8,
-          ),
-          actions: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              mainAxisSize: MainAxisSize.max,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          content: SizedBox(
+            width: MediaQuery.of(parentContext).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  'Create New Dataset',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Select images from',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildFolderChoice(
+                        svgIcon: const SvgFolderIcon(size: 80),
+                        label: 'Gallery',
+                        onTap: () => _navigateToSelection(parentContext, null, onFolderCreated),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildFolderChoice(
+                        svgIcon: const SvgFolderIcon(size: 80),
+                        label: 'My Trees',
+                        onTap: () => _navigateToSelection(parentContext, 'My Trees', onFolderCreated),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF393939),
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                  ),
+                  child: Text('Cancel', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)),
                 ),
-                const SizedBox(width: 5), 
               ],
             ),
-          ],
+          ),
         );
       },
     );
   }
 
-  // Shows a dialog for entering/editing a folder name
+  // --- NAME INPUT DIALOG ---
   static Future<String?> _showNameInputDialog(
     BuildContext context, {
     required String title,
@@ -104,8 +84,6 @@ class DatasetDialogs {
     String initialName = '',
     String hintText = 'e.g., My Mango Farm',
   }) async {
-    String folderName = initialName;
-    // Controller to manage the TextField content
     final TextEditingController controller = TextEditingController(text: initialName);
 
     return showDialog<String>(
@@ -113,195 +91,221 @@ class DatasetDialogs {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          // Set contentPadding to ensure minimal bottom space after the content items.
-          contentPadding: const EdgeInsets.fromLTRB(
-            24,
-            20,
-            24,
-            8,
-          ),
-          actionsPadding: EdgeInsets.zero, 
-          actions: [], 
-          title: Text(
-            title,
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Set name of the dataset',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
                 ),
-              ),
-              const SizedBox(height: 12),
-
-              Align(
-                alignment: Alignment.center,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD9D9D9),
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 2,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                const SizedBox(height: 2),
+                Text(
+                  'Set the name of your dataset',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.black54,
                   ),
-                  padding: const EdgeInsets.all(20),
-                  child: const SvgFolderIcon(size: 90),
                 ),
-              ),
-              const SizedBox(height: 6),
-
-              TextField(
-                controller: controller,
-                autofocus: true,
-                onChanged: (val) => folderName = val,
-                decoration: InputDecoration(
-                  hintText: hintText,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                mainAxisSize: MainAxisSize.max,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, null),
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.inter(
-                        color: Colors.black54,
-                        fontWeight: FontWeight.w500,
-                      ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: hintText,
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey, width: 1),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 2.5),
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      if (folderName.trim().isNotEmpty) {
-                        Navigator.pop(dialogContext, folderName.trim());
-                      } else {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(
-                            content: Text('Folder name cannot be empty'),
-                          ),
-                        );
-                      }
-                    },
-                    style: TextButton.styleFrom(foregroundColor: Colors.black54),
-                    child: Text(
-                      actionButtonText,
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, null),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text('Cancel', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () {
+                          final name = controller.text.trim();
+                          if (name.isNotEmpty) Navigator.pop(dialogContext, name);
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: const Color(0xFF4CAF50),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text(actionButtonText, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  // Shows a dialog for entering the new folder name
-  static Future<String?> _showFolderNameDialog(BuildContext context) async {
+  static Future<String?> showRenameFolderDialog(BuildContext context, String currentName) async {
     return _showNameInputDialog(
       context,
-      title: 'Create new dataset',
-      actionButtonText: 'Save',
-    );
-  }
-
-  // Shows a dialog for renaming an existing folder
-  static Future<String?> showRenameFolderDialog(
-    BuildContext context,
-    String currentName,
-  ) async {
-    return _showNameInputDialog(
-      context,
-      title: 'Rename dataset',
+      title: 'Rename Dataset',
       actionButtonText: 'Rename',
       initialName: currentName,
-      hintText: currentName,
     );
   }
 
+  // --- DELETE CONFIRMATION DIALOG (COPIED DESIGN) ---
+  // --- DELETE CONFIRMATION DIALOG (MATCHING GALLERY STYLE) ---
+  static Future<bool> showDeleteConfirmationDialog(BuildContext context, String folderName) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center, 
+              children: [
+                Text(
+                  'Delete "$folderName"?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to \ndelete "$folderName"? \nThis action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text('Cancel', 
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text('Delete', 
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ) ?? false;
+  }
 
-  // Shows a dialog to choose between renaming or deleting a dataset folder
+  // --- ACTION SHEET ---
+  // --- BOTTOM ACTION SHEET (MATCHING GALLERY STYLE) ---
   static Future<FolderAction?> showFolderActionDialog(
     BuildContext context,
     String folderName,
   ) async {
-    return showModalBottomSheet<FolderAction?>(
+    return await showModalBottomSheet<FolderAction>(
       context: context,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
       ),
-      builder: (context) {
-        return Padding(
-          // Adjusted padding to match the image's minimal content spacing
-          padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0), 
+      builder: (sheetContext) {
+        return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            // Removed folderName text and Divider to match the image
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 'Edit Name' option
-              InkWell(
-                onTap: () => Navigator.pop(context, FolderAction.rename),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 10.0), // Padding to mimic ListTile
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit, color: Colors.black87),
-                      const SizedBox(width: 32),
-                      Text(
-                        'Rename', // Changed label
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 8),
+              
+              // --- RENAME OPTION ---
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                leading: const Icon(Icons.edit, color: Colors.black87),
+                title: Text(
+                  'Rename',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w500),
+                ),
+                splashColor: Colors.green.withOpacity(0.1),
+                onTap: () => Navigator.pop(sheetContext, FolderAction.rename),
+              ),
+
+              // --- DIVIDER LINE ---
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                child: Divider(
+                  height: 1,
+                  thickness: 1.2,
+                  color: Color(0xFFE0E0E0),
                 ),
               ),
 
-              // 'Delete Tree' option
-              InkWell(
-                onTap: () => Navigator.pop(context, FolderAction.delete),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 10.0), // Padding to mimic ListTile
-                  child: Row(
-                    children: [
-                      const Icon(Icons.delete_forever, color: Colors.red),
-                      const SizedBox(width: 32),
-                      Text(
-                        'Delete Dataset', // Changed label
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 16,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ],
-                  ),
+              // --- DELETE OPTION ---
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: Text(
+                  'Delete Dataset',
+                  style: GoogleFonts.inter(color: Colors.red, fontWeight: FontWeight.w500),
                 ),
+                splashColor: Colors.red.withOpacity(0.1),
+                onTap: () => Navigator.pop(sheetContext, FolderAction.delete),
               ),
+              const SizedBox(height: 12),
             ],
           ),
         );
@@ -309,7 +313,7 @@ class DatasetDialogs {
     );
   }
 
-  // Navigates to the gallery selection page and handles folder creation
+  // --- NAVIGATION LOGIC ---
   static void _navigateToSelection(
     BuildContext parentContext,
     String? initialMode,
@@ -317,64 +321,48 @@ class DatasetDialogs {
   ) async {
     Navigator.pop(parentContext); 
 
-    // GalleryPage accepts 'isSelectionMode: true' and 'initialMode'
     final selected = await Navigator.push<List<String>>(
       parentContext,
       MaterialPageRoute(
-        builder: (_) =>
-            GalleryPage(isSelectionMode: true, initialMode: initialMode),
+        builder: (_) => GalleryPage(isSelectionMode: true, initialMode: initialMode),
       ),
     );
 
     if (selected != null && selected.isNotEmpty) {
-      final finalFolderName = await _showFolderNameDialog(parentContext);
+      final finalFolderName = await _showNameInputDialog(
+        parentContext, 
+        title: 'Create Dataset', 
+        actionButtonText: 'Save'
+      );
 
       if (finalFolderName != null && finalFolderName.isNotEmpty) {
-        // Use the callback to update the state of the DatasetPage
         onFolderCreated(finalFolderName, selected);
-      } else {
-        // If folder name not entered, reopen the creation dialog
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          showCreateFolderDialog(parentContext, onFolderCreated);
-        });
       }
     }
   }
 
-  // Builds an individual folder choice card in the creation dialog
   static Widget _buildFolderChoice({
     required SvgFolderIcon svgIcon,
     required String label,
     required VoidCallback onTap,
-    Color? backgroundColor,
   }) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 130,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: backgroundColor ?? const Color(0xFFE4E4E4),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 2,
-              offset: Offset(0, 4),
-            ),
-          ],
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[300]!, width: 1),
         ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             svgIcon,
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               label,
-              style: GoogleFonts.inter(
-                color: Colors.black,
-                fontWeight: FontWeight.w600,
-              ),
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 15),
             ),
           ],
         ),

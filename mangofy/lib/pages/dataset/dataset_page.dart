@@ -4,6 +4,7 @@ import 'dataset_constants.dart';
 import 'dataset_dialogs.dart';
 import 'dataset_widgets.dart'; 
 import '../../services/database_service.dart'; 
+import '../../services/sync_service.dart';
 import '../../model/dataset_folder_model.dart'; 
 
 // The DatasetPage widget displays a list of dataset folders
@@ -27,6 +28,13 @@ class _DatasetPageState extends State<DatasetPage> {
   void initState() {
     super.initState();
     _loadFolders();
+    SyncService.instance.lastSyncNotifier.addListener(_loadFolders);
+  }
+
+  @override
+  void dispose() {
+    SyncService.instance.lastSyncNotifier.removeListener(_loadFolders);
+    super.dispose();
   }
 
   // Method to fetch dataset folders from the database
@@ -41,6 +49,7 @@ class _DatasetPageState extends State<DatasetPage> {
     });
   }
 
+  // Handler for folder rename or delete actions
   // Handler for folder rename or delete actions
   void _handleFolderAction(String folderName) async {
     final action = await DatasetDialogs.showFolderActionDialog(
@@ -65,24 +74,11 @@ class _DatasetPageState extends State<DatasetPage> {
         );
       }
     } else if (action == FolderAction.delete) {
-      // Show confirmation dialog before deleting
-      final bool confirmDelete = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Confirm Deletion'),
-          content: Text('Are you sure you want to delete the dataset "$folderName"? This action cannot be undone.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-      ) ?? false;
+      // --- UPDATED: Use the styled dialog from DatasetDialogs ---
+      final bool confirmDelete = await DatasetDialogs.showDeleteConfirmationDialog(
+        context, 
+        folderName
+      );
 
       if (confirmDelete) {
         await DatabaseService.instance.deleteDatasetFolder(folderName);
