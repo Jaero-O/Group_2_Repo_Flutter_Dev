@@ -4,8 +4,6 @@ import 'scan_details_page.dart';
 import 'scan_constants.dart';
 import '../../ui/green_header_background.dart';
 import '../../services/database_service.dart';
-import '../../services/hotspot_service.dart';
-import '../../services/sync_service.dart';
 import '../../model/scan_model.dart';
 
 // Displays history of leaf scans, fetching data from the database.
@@ -17,6 +15,7 @@ class ScanPage extends StatefulWidget {
 }
 
 enum SortOption { dateNewest, dateOldest, severityHigh, severityLow }
+
 enum FilterOption { all, healthy, moderate, severe }
 
 class _ScanPageState extends State<ScanPage> {
@@ -24,8 +23,6 @@ class _ScanPageState extends State<ScanPage> {
   List<ScanRecord> _scanHistory = [];
   List<ScanRecord> _displayScanHistory = []; // The list shown to the user
   bool _isLoading = true;
-  String _syncStatus = 'Idle';
-  String _piStatus = 'Disconnected';
 
   // Sort and Filter state
   SortOption _currentSort = SortOption.dateNewest;
@@ -35,51 +32,6 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _seedDummyDataIfEmpty();
-    _performAutoSync();
-  }
-
-  Future<void> _performAutoSync() async {
-    setState(() {
-      _syncStatus = 'Attempting Pi connection...';
-    });
-
-    final connected = await HotspotService.instance.connectPiHotspot();
-    if (!connected) {
-      setState(() {
-        _syncStatus = 'Unable to connect to Pi hotspot';
-        _piStatus = 'Disconnected';
-      });
-      return;
-    }
-
-    setState(() {
-      _syncStatus = 'Hotspot connected. Verifying Pi status...';
-      _piStatus = 'Connected to Pi-Proto-Net';
-    });
-
-    final verified = await HotspotService.instance.verifyPi();
-    if (!verified) {
-      setState(() {
-        _syncStatus = 'Pi API unreachable';
-      });
-      return;
-    }
-
-    setState(() {
-      _syncStatus = 'Pi verified. Syncing data...';
-    });
-
-    try {
-      await SyncService.instance.sync();
-      await _loadScanHistory();
-      setState(() {
-        _syncStatus = 'Sync complete';
-      });
-    } catch (e) {
-      setState(() {
-        _syncStatus = 'Sync failed: $e';
-      });
-    }
   }
 
   // Loads the scan history without inserting placeholder data.
@@ -122,11 +74,11 @@ class _ScanPageState extends State<ScanPage> {
     filteredList.sort((a, b) {
       switch (_currentSort) {
         case SortOption.dateNewest:
-          // To sort Newest First (Descending by ID): b.id > a.id 
-          return a.id.compareTo(b.id); 
+          // To sort Newest First (Descending by ID): b.id > a.id
+          return a.id.compareTo(b.id);
 
         case SortOption.dateOldest:
-          // To sort Oldest First (Ascending by ID): a.id < b.id 
+          // To sort Oldest First (Ascending by ID): a.id < b.id
           return b.id.compareTo(a.id);
 
         case SortOption.severityHigh:
@@ -144,7 +96,7 @@ class _ScanPageState extends State<ScanPage> {
     });
   }
 
-  // UI Methods for Sort/Filter Selection 
+  // UI Methods for Sort/Filter Selection
 
   void _showSortOptions() {
     showModalBottomSheet(
@@ -210,11 +162,11 @@ class _ScanPageState extends State<ScanPage> {
   }) {
     return Container(
       decoration: const BoxDecoration(
-      color: Colors.white, 
-      borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
       ),
       // Top padding for the title, bottom padding for safe area spacing
-      padding: const EdgeInsets.fromLTRB(32, 14, 32, 14),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -223,15 +175,15 @@ class _ScanPageState extends State<ScanPage> {
             title,
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              fontSize: 24,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: const Color(0xFF005200),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           const Divider(height: 1),
           const SizedBox(height: 8),
-          
+
           ...options.entries.map((entry) {
             final option = entry.key;
             final label = entry.value;
@@ -250,16 +202,14 @@ class _ScanPageState extends State<ScanPage> {
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   decoration: BoxDecoration(
                     // Highlight with gray when selected
-                    color: isSelected 
-                        ? Colors.grey[200]
-                        : Colors.transparent,
+                    color: isSelected ? Colors.grey[200] : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     label,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
-                      fontSize: 19,
+                      fontSize: 14,
                       // Bold and Green text if selected, otherwise normal
                       // fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                       // color: isSelected ? const Color(0xFF007700) : Colors.black87,
@@ -276,7 +226,7 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate Summary Stats 
+    // Calculate Summary Stats
     final int totalScans = _scanHistory.length;
     // Count items where status is explicitly 'Healthy'
     final int healthyScans = _scanHistory
@@ -311,13 +261,9 @@ class _ScanPageState extends State<ScanPage> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'Wi-Fi: $_piStatus · Sync: $_syncStatus',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: Colors.white70,
-                      ),
-                    ),
+                    // Status text moved to center of scan list page for better visibility
+                    const SizedBox(height: 0),
+                    const SizedBox(height: 0),  // status line hidden for clean UI
                   ],
                 ),
               ),
@@ -354,27 +300,31 @@ class _ScanPageState extends State<ScanPage> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      _scanHistory.isEmpty
-                                          ? 'No scans yet. Automatic sync in progress.'
-                                          : 'No scans matching the current filter.',
-                                      style: GoogleFonts.inter(color: Colors.grey[500]),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'State: $_syncStatus',
-                                      style: GoogleFonts.inter(color: Colors.grey[600], fontSize: 12),
-                                    ),
-                                    const SizedBox(height: 14),
-                                    ElevatedButton(
-                                      onPressed: _performAutoSync,
-                                      child: const Text('Retry sync'),
-                                    ),
+                                      Text(
+                                        'No scans yet',
+                                        style: GoogleFonts.inter(
+                                          color: Colors.grey[600],
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                                        child: Text(
+                                          'Scan a Raspberry Pi QR code to import images automatically.',
+                                          style: GoogleFonts.inter(
+                                            color: Colors.grey[600],
+                                            fontSize: 14,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               )
-                            : ListView.separated(
+                        : ListView.separated(
                             itemCount: _displayScanHistory.length,
                             padding: EdgeInsets.fromLTRB(
                               16,

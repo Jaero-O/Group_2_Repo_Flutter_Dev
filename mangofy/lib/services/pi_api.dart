@@ -1,63 +1,69 @@
-import 'dart:convert';
-import 'dart:io'; // Required for File
+﻿import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart'; // Required for getApplicationDocumentsDirectory
+import 'package:path_provider/path_provider.dart';
 import '../model/scan_item.dart';
 
 class PiApi {
   PiApi._();
   static final PiApi instance = PiApi._();
+  static const String hotspotBaseUrl = 'http://192.168.4.1:5000';
+  static const String defaultBaseUrl = hotspotBaseUrl;
 
-  // Switch to the ZeroTier Managed IP
-  static const String _baseUrl = 'http://192.168.196.139:5000';
+  Uri _makeUri(String baseUrl, String path) {
+    final base = Uri.parse(baseUrl);
+    final origin = base.hasScheme
+        ? '${base.scheme}://${base.host}${base.hasPort ? ':${base.port}' : ''}'
+        : baseUrl;
+    final normalized = origin.endsWith('/') ? origin.substring(0, origin.length - 1) : origin;
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$normalized$normalizedPath');
+  }
 
-  // Helper to check if the Pi is reachable over VPN
-  Future<bool> checkStatus() async {
+  Future<bool> getStatus(String baseUrl) async {
     try {
-      final resp = await http
-          .get(Uri.parse('$_baseUrl/api/status'))
-          .timeout(const Duration(seconds: 5));
-      return resp.statusCode == 200;
+      final uri = _makeUri(baseUrl, '/api/status');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      return resp.statusCode == 200 && (resp.body.toLowerCase().contains('ready') || resp.body.isNotEmpty);
     } catch (_) {
       return false;
     }
   }
 
-  Future<ScanItem> getScan(String id) async {
-    final resp = await http.get(Uri.parse('$_baseUrl/api/scan/$id'));
-    if (resp.statusCode != 200) throw Exception('Scan missing on Pi');
+  Future<ScanItem> getScan(String baseUrl, String id) async {
+    final uri = _makeUri(baseUrl, '/api/scan/$id');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) throw Exception('Scan $id not found on Pi at $baseUrl');
     return ScanItem.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
 
-  Future<List<ScanItem>> getScansSince(String timestamp) async {
-    final resp = await http.get(Uri.parse('$_baseUrl/api/scan/since/$timestamp'));
-    if (resp.statusCode != 200) throw Exception('Failed sync');
+  Future<List<ScanItem>> getScansAll(String baseUrl) async {
+    final uri = _makeUri(baseUrl, '/api/scan/all');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) throw Exception('Failed fetch all scans from Pi at $baseUrl');
     final arr = jsonDecode(resp.body) as List;
     return arr.map((e) => ScanItem.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<List<ScanItem>> getScansAll() async {
-    final resp = await http.get(Uri.parse('$_baseUrl/api/scan/all'));
-    if (resp.statusCode != 200) throw Exception('Failed fetch all scans');
+  Future<List<ScanItem>> getScansSince(String baseUrl, String timestamp) async {
+    final uri = _makeUri(baseUrl, '/api/scan/since/$timestamp');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (resp.statusCode != 200) throw Exception('Failed fetch scans since $timestamp from Pi at $baseUrl');
     final arr = jsonDecode(resp.body) as List;
     return arr.map((e) => ScanItem.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<String> downloadImage(ScanItem item) async {
-    // Force the use of the ZeroTier IP by rebuilding the URL from the filename
+  Future<String> downloadImage(ScanItem item, String baseUrl) async {
     final fileName = item.imageUrl.split('/').last;
-    final downloadUrl = '$_baseUrl/api/image/$fileName';
+    final uri = _makeUri(baseUrl, '/api/image/$fileName');
 
-    final resp = await http.get(Uri.parse(downloadUrl));
-    if (resp.statusCode != 200) throw Exception('Image download failed');
+    final resp = await http.get(uri).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) throw Exception('Image download failed from Pi at $baseUrl');
 
-    // Fixed typo: getApplicationDocumentsDirectory instead of getApplicationDocuments Lindos
     final directory = await getApplicationDocumentsDirectory();
-    final filePath = '${directory.path}/$fileName';
-    
-    final file = File(filePath);
+    final path = '${directory.path}/$fileName';
+    final file = File(path);
     await file.writeAsBytes(resp.bodyBytes);
-    
-    return filePath;
+    return path;
   }
 }

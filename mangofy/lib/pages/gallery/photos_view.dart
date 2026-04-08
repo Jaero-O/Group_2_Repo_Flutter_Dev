@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
 import 'photo_widgets.dart';
 import 'gallery_dialogs.dart';
-import '../../model/photo.dart'; 
+import '../../model/photo.dart';
 
 // Widget that displays a grid or list of photos depending on the view mode.
-// Supports four view modes: 'All Photos', 'Years', 'Months', or 'Days'.
 class PhotoGridContent extends StatelessWidget {
-  // Current view mode: 'All Photos', 'Years', 'Months', or 'Days'
   final String viewMode;
-
-  // Callback for when a photo is long-pressed (for deletion/options)
   final ValueChanged<String>? onPhotoLongPress;
-
   final List<Photo> photos;
 
   const PhotoGridContent({
@@ -21,7 +16,6 @@ class PhotoGridContent extends StatelessWidget {
     required this.photos,
   });
 
-  // Helper method to navigate to the full screen view
   void _openFullScreenView(BuildContext context, String imagePath, [Photo? photo]) {
     Navigator.push(
       context,
@@ -33,7 +27,6 @@ class PhotoGridContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // "All Photos" view 
     if (viewMode == 'All Photos') {
       return PhotoGrid(
         photos: photos,
@@ -41,26 +34,21 @@ class PhotoGridContent extends StatelessWidget {
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
         padding: const EdgeInsets.all(4),
-        borderRadius: 4, 
+        borderRadius: 4,
         onItemTap: (index) {
           _openFullScreenView(context, photos[index].id.toString(), photos[index]);
         },
-        // Handle long press on photo
         onItemLongPress: (index) {
           if (onPhotoLongPress != null) {
             onPhotoLongPress!(photos[index].id.toString());
           } else {
-            // Default action if no handler is provided 
             GalleryDialogs.showDeleteConfirmationDialog(
               context,
               'Photo',
               photos[index].id.toString(),
               () {
-                // This would call a service to delete the photo
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Photo ${photos[index].name} marked for deletion!'),
-                  ),
+                  SnackBar(content: Text('Photo ${photos[index].name} marked for deletion!')),
                 );
               },
             );
@@ -68,7 +56,6 @@ class PhotoGridContent extends StatelessWidget {
         },
       );
     } else {
-    // Grouped views (Years, Months, or Days)
       return ListView(
         padding: const EdgeInsets.all(12),
         children: _buildGroupedSections(context),
@@ -76,8 +63,7 @@ class PhotoGridContent extends StatelessWidget {
     }
   }
 
-  // Builds sections for the grouped views (Years, Months, Days)
-  List<Widget> _buildGroupedSections(BuildContext context) { 
+  List<Widget> _buildGroupedSections(BuildContext context) {
     final yearData = {
       '2025': {
         'December': ['01', '02', '05'],
@@ -87,65 +73,28 @@ class PhotoGridContent extends StatelessWidget {
     };
 
     List<Widget> sections = [];
-    int photoIndex = 0; // Use an index to generate unique IDs for the placeholders
+    int photoIndex = 0;
 
     yearData.forEach((year, months) {
       if (viewMode == 'Years') {
         sections.add(
           Padding(
             padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
-            child: Text(
-              year,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
+            child: Text(year, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           ),
         );
         months.forEach((month, days) {
           final count = 16;
           final currentPhotos = List.generate(count, (i) => 'Y:$year/M:$month/P:${photoIndex + i}');
           photoIndex += count;
-
-          sections.add(
-            Padding(
-              padding: const EdgeInsets.only(left: 24, top: 6, bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    month,
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildPhotoGrid(context, count, currentPhotos), 
-                ],
-              ),
-            ),
-          );
+          sections.add(_buildGroupedColumn(context, month, count, currentPhotos, leftPadding: 24));
         });
       } else if (viewMode == 'Months') {
         months.forEach((month, days) {
           final count = 16;
           final currentPhotos = List.generate(count, (i) => 'M:$month/Y:$year/P:${photoIndex + i}');
           photoIndex += count;
-
-          sections.add(
-            Padding(
-              padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$month $year',
-                    style:
-                        const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildPhotoGrid(context, count, currentPhotos), 
-                ],
-              ),
-            ),
-          );
+          sections.add(_buildGroupedColumn(context, '$month $year', count, currentPhotos));
         });
       } else if (viewMode == 'Days') {
         months.forEach((month, days) {
@@ -153,39 +102,29 @@ class PhotoGridContent extends StatelessWidget {
             final count = 8;
             final currentPhotos = List.generate(count, (i) => 'D:$day/M:$month/Y:$year/P:${photoIndex + i}');
             photoIndex += count;
-
-            sections.add(
-              Padding(
-                padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$month $day, $year',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildPhotoGrid(context, count, currentPhotos),
-                  ],
-                ),
-              ),
-            );
+            sections.add(_buildGroupedColumn(context, '$month $day, $year', count, currentPhotos, titleSize: 16));
           }
         });
       }
     });
-
     return sections;
   }
 
-  // Helper method to build a placeholder photo grid of [count] items
-  Widget _buildPhotoGrid(
-    BuildContext context, 
-    int count, 
-    List<String> imageIds,
-  ) {
-    // Use the reusable PhotoGridPlaceholder
+  Widget _buildGroupedColumn(BuildContext context, String title, int count, List<String> ids, {double leftPadding = 12, double titleSize = 20}) {
+    return Padding(
+      padding: EdgeInsets.only(left: leftPadding, top: 10, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          _buildPhotoGrid(context, count, ids),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotoGrid(BuildContext context, int count, List<String> imageIds) {
     return PhotoGridPlaceholder(
       itemCount: count,
       imageIds: imageIds,
@@ -195,60 +134,37 @@ class PhotoGridContent extends StatelessWidget {
       crossAxisSpacing: 4,
       mainAxisSpacing: 4,
       borderRadius: 8,
-      iconSize: 40,
-      onItemTap: (index) {
-        _openFullScreenView(context, imageIds[index]);
-      },
-      // Pass long press handler for grouped views
+      onItemTap: (index) => _openFullScreenView(context, imageIds[index]),
       onItemLongPress: (index) {
         if (onPhotoLongPress != null) {
           onPhotoLongPress!(imageIds[index]);
         } else {
-          // Default action if no handler is provided
-          GalleryDialogs.showDeleteConfirmationDialog(
-            context,
-            'Photo',
-            imageIds[index],
-            () {
-              // This would call a service to delete the photo
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Photo ${imageIds[index]} marked for deletion!'),
-                ),
-              );
-            },
-          );
+          GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', imageIds[index], () {});
         }
       },
     );
   }
 }
 
-// Main widget for displaying photos with a bottom view mode selector
+// --- Main Photos View with Thinner Responsive Mode Selector ---
+
 class PhotosView extends StatefulWidget {
-  // Property for photo long press, passed from GalleryPage
   final ValueChanged<String>? onPhotoLongPress;
   final List<Photo> photos;
 
-  const PhotosView({
-    super.key,
-    this.onPhotoLongPress,
-    required this.photos,
-  });
+  const PhotosView({super.key, this.onPhotoLongPress, required this.photos});
 
   @override
   State<PhotosView> createState() => _PhotosViewState();
 }
 
 class _PhotosViewState extends State<PhotosView> {
-  // Current view mode
   String viewMode = 'All Photos';
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Main photo grid/list content
         Positioned.fill(
           child: PhotoGridContent(
             viewMode: viewMode,
@@ -257,32 +173,33 @@ class _PhotosViewState extends State<PhotosView> {
           ),
         ),
 
-        // Bottom view mode selector
+        // Thinner Bottom Navigation Selector
         Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
             padding: const EdgeInsets.only(bottom: 24.0),
             child: Container(
+              constraints: const BoxConstraints(maxWidth: 500),
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              // THINNER PADDING
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(190),
+                color: Colors.white.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: const [
                   BoxShadow(
-                    color: Colors.black26,
+                    color: Colors.black12,
                     blurRadius: 10,
-                    spreadRadius: 1,
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
-              margin: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildBottomButton('Years'),
-                  _buildBottomButton('Months'),
-                  _buildBottomButton('Days'),
-                  _buildBottomButton('All Photos'),
+                  _buildModeButton('Years'),
+                  _buildModeButton('Months'),
+                  _buildModeButton('Days'),
+                  _buildModeButton('All Photos'),
                 ],
               ),
             ),
@@ -292,26 +209,30 @@ class _PhotosViewState extends State<PhotosView> {
     );
   }
 
-  // Builds a bottom navigation button for switching view modes
-  Widget _buildBottomButton(String label) {
-    final isActive = viewMode == label;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          viewMode = label;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.grey : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            color: isActive ? Colors.white : Colors.grey,
+  Widget _buildModeButton(String label) {
+    final bool isActive = viewMode == label;
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => viewMode = label),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          // THINNER VERTICAL PADDING
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            // ORIGINAL GREY
+            color: isActive ? Colors.grey : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+              // ORIGINAL GREY
+              color: isActive ? Colors.white : Colors.grey,
+            ),
           ),
         ),
       ),

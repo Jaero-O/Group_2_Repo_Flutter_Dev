@@ -393,6 +393,17 @@ class DatabaseService {
     return db.delete(photosTable, where: "$colId = ?", whereArgs: [id]);
   }
 
+  Future<bool> photoExists(String name, String timestamp) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      photosTable,
+      where: "$colPhotoName = ? AND $colPhotoTimestamp = ?",
+      whereArgs: [name, timestamp],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
   // DB Close / Reset
   Future<void> close() async {
     final db = _database;

@@ -118,7 +118,18 @@ class SeverityDistributionsCard extends StatelessWidget {
       }
     }
     if (totalScans == 0) {
-      return const SizedBox.shrink(); 
+      return Card(
+        color: const Color(0xFFFAFAFA),
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'No scan data yet. Press Connect and scan a leaf to populate severity distribution.',
+            style: TextStyle(color: Color(0xFF777777), fontSize: 14),
+          ),
+        ),
+      );
     }
 
     return Card(

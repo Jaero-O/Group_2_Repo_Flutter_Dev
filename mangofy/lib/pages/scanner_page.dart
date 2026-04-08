@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/qr_scanner_service.dart';
-import '../services/pi_api.dart'; 
-import '../services/local_db.dart'; 
-import '../model/pi_qr_data.dart'; 
+import '../services/local_db.dart';
+import '../services/sync_service.dart';
+import '../model/pi_qr_data.dart';
 
 class ScannerPage extends StatefulWidget {
   const ScannerPage({super.key});
@@ -30,33 +30,15 @@ class _ScannerPageState extends State<ScannerPage> {
     setState(() => _scanned = true);
 
     try {
-      // 1. Parse the JSON from the QR code
       final qrData = PiQrData.fromRaw(raw);
 
-      /* // 2. DISABLED FOR VPN USAGE
-      // We comment this out because connectPiHotspot() forces the phone 
-      // to join a Wi-Fi network, which drops the Mobile Data required for the VPN.
-      
-      final connected = await HotspotService.instance.connectPiHotspot();
-      if (!connected) throw Exception("Could not connect to Pi-Proto-Net");
-      */
+      // Automatically connect and sync with Pi when the QR is scanned.
+      await SyncService.instance.syncFromPi(qrData);
 
-      // 3. Fetch the full scan data from the Pi API (now using VPN IP)
-      // Check if Pi is actually reachable over VPN first
-      final isAvailable = await PiApi.instance.checkStatus();
-      if (!isAvailable) {
-        throw Exception("Pi not reachable at 192.168.196.139. Check ZeroTier!");
-      }
+      final localScan = await LocalDb.instance.getScanById(int.parse(qrData.scanId));
+      if (localScan == null) throw Exception('Imported scan not found locally');
 
-      final remoteScan = await PiApi.instance.getScan(qrData.scanId);
-
-      // 4. Save the record into local SQL database
-      await LocalDb.instance.upsertScan(remoteScan);
-
-      // 5. Download the image
-      final imagePath = await PiApi.instance.downloadImage(remoteScan);
-      final file = File(imagePath);
-      final bytes = await file.readAsBytes();
+      final bytes = await File(localScan.imagePath).readAsBytes();
 
       if (mounted) {
         setState(() {
@@ -64,11 +46,10 @@ class _ScannerPageState extends State<ScannerPage> {
           _error = null;
         });
       }
-      
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'VPN Sync failed: $e';
+          _error = 'Sync failed: $e';
         });
       }
     }
@@ -91,15 +72,86 @@ class _ScannerPageState extends State<ScannerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan Mango Leaf (VPN Mode)')),
-      body: _scanned ? _buildResult() : _buildScanner(),
+      body: SafeArea(
+        child: _scanned ? _buildResult() : _buildScanner(),
+      ),
     );
   }
 
   Widget _buildScanner() {
-    return MobileScanner(
-      controller: _scannerService.controller,
-      onDetect: _onDetect,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        MobileScanner(
+          controller: _scannerService.controller,
+          onDetect: _onDetect,
+          fit: BoxFit.cover,
+        ),
+        _buildScannerOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildScannerOverlay() {
+    const double frameSize = 280;
+    const double cornerWidth = 5;
+    const double cornerLength = 44;
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _ScannerMaskPainter(frameSize: frameSize),
+          ),
+        ),
+        Center(
+          child: Transform.translate(
+            offset: const Offset(0, -48),
+            child: SizedBox(
+              width: frameSize,
+              height: frameSize,
+              child: CustomPaint(
+                painter: _QrGuidePainter(
+                  color: Colors.greenAccent,
+                  strokeWidth: cornerWidth,
+                  cornerLength: cornerLength,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: 72,
+          left: 0,
+          right: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text(
+                'Align the QR code inside the frame',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  shadows: [
+                    Shadow(blurRadius: 12, color: Colors.black54, offset: Offset(0, 1)),
+                  ],
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'The image will import automatically once scanned',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -133,4 +185,74 @@ class _ScannerPageState extends State<ScannerPage> {
       ],
     );
   }
+}
+
+class _ScannerMaskPainter extends CustomPainter {
+  final double frameSize;
+
+  _ScannerMaskPainter({required this.frameSize});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color.fromRGBO(0, 0, 0, 0.45);
+    final Rect outer = Rect.fromLTWH(0, 0, size.width, size.height);
+    final Rect hole = Rect.fromCenter(
+      center: size.center(const Offset(0, -48)),
+      width: frameSize,
+      height: frameSize,
+    );
+
+    final path = Path()
+      ..addRect(outer)
+      ..addRect(hole)
+      ..fillType = PathFillType.evenOdd;
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _QrGuidePainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double cornerLength;
+
+  _QrGuidePainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.cornerLength,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final double inset = strokeWidth / 2;
+    final Rect rect = Rect.fromLTWH(inset, inset, size.width - strokeWidth, size.height - strokeWidth);
+
+    // Top-left
+    canvas.drawLine(rect.topLeft, rect.topLeft.translate(cornerLength, 0), paint);
+    canvas.drawLine(rect.topLeft, rect.topLeft.translate(0, cornerLength), paint);
+
+    // Top-right
+    canvas.drawLine(rect.topRight, rect.topRight.translate(-cornerLength, 0), paint);
+    canvas.drawLine(rect.topRight, rect.topRight.translate(0, cornerLength), paint);
+
+    // Bottom-left
+    canvas.drawLine(rect.bottomLeft, rect.bottomLeft.translate(cornerLength, 0), paint);
+    canvas.drawLine(rect.bottomLeft, rect.bottomLeft.translate(0, -cornerLength), paint);
+
+    // Bottom-right
+    canvas.drawLine(rect.bottomRight, rect.bottomRight.translate(-cornerLength, 0), paint);
+    canvas.drawLine(rect.bottomRight, rect.bottomRight.translate(0, -cornerLength), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
