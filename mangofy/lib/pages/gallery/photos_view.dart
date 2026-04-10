@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'photo_widgets.dart';
 import 'gallery_dialogs.dart';
 import '../../model/photo.dart';
@@ -27,6 +28,19 @@ class PhotoGridContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (photos.isEmpty) {
+      return Center(
+        child: Text(
+          'No images available',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    }
     if (viewMode == 'All Photos') {
       return PhotoGrid(
         photos: photos,
@@ -64,53 +78,134 @@ class PhotoGridContent extends StatelessWidget {
   }
 
   List<Widget> _buildGroupedSections(BuildContext context) {
-    final yearData = {
-      '2025': {
-        'December': ['01', '02', '05'],
-        'November': ['10', '12', '15', '20'],
-        'October': ['25', '28'],
-      },
-    };
+    const monthNames = <String>[
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    DateTime? parse(String raw) {
+      final dt = DateTime.tryParse(raw);
+      return dt?.toLocal();
+    }
+
+    final datedPhotos = photos
+        .map((p) => (photo: p, time: parse(p.timestamp)))
+        .where((x) => x.time != null)
+        .toList();
+
+    // If timestamps are missing/unparseable, fall back to all-photos.
+    if (datedPhotos.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.only(top: 24),
+          child: Center(
+            child: Text(
+              'No dated photos available.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
 
     List<Widget> sections = [];
-    int photoIndex = 0;
 
-    yearData.forEach((year, months) {
-      if (viewMode == 'Years') {
+    if (viewMode == 'Years') {
+      final Map<int, Map<int, List<Photo>>> grouped = {};
+      for (final x in datedPhotos) {
+        final t = x.time!;
+        (grouped[t.year] ??= {})[t.month] = [...(grouped[t.year]?[t.month] ?? const []), x.photo];
+      }
+
+      final years = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+      for (final year in years) {
         sections.add(
           Padding(
             padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
-            child: Text(year, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            child: Text('$year', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           ),
         );
-        months.forEach((month, days) {
-          final count = 16;
-          final currentPhotos = List.generate(count, (i) => 'Y:$year/M:$month/P:${photoIndex + i}');
-          photoIndex += count;
-          sections.add(_buildGroupedColumn(context, month, count, currentPhotos, leftPadding: 24));
-        });
-      } else if (viewMode == 'Months') {
-        months.forEach((month, days) {
-          final count = 16;
-          final currentPhotos = List.generate(count, (i) => 'M:$month/Y:$year/P:${photoIndex + i}');
-          photoIndex += count;
-          sections.add(_buildGroupedColumn(context, '$month $year', count, currentPhotos));
-        });
-      } else if (viewMode == 'Days') {
-        months.forEach((month, days) {
-          for (var day in days) {
-            final count = 8;
-            final currentPhotos = List.generate(count, (i) => 'D:$day/M:$month/Y:$year/P:${photoIndex + i}');
-            photoIndex += count;
-            sections.add(_buildGroupedColumn(context, '$month $day, $year', count, currentPhotos, titleSize: 16));
-          }
-        });
+
+        final months = grouped[year]!.keys.toList()..sort((a, b) => b.compareTo(a));
+        for (final month in months) {
+          final monthPhotos = grouped[year]![month]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          sections.add(
+            _buildGroupedColumn(
+              context,
+              monthNames[month - 1],
+              monthPhotos,
+              leftPadding: 24,
+            ),
+          );
+        }
       }
-    });
+
+      return sections;
+    }
+
+    if (viewMode == 'Months') {
+      final Map<String, List<Photo>> grouped = {};
+      for (final x in datedPhotos) {
+        final t = x.time!;
+        final key = '${t.year}-${t.month.toString().padLeft(2, '0')}';
+        grouped[key] = [...(grouped[key] ?? const []), x.photo];
+      }
+
+      final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+      for (final key in keys) {
+        final parts = key.split('-');
+        final year = int.tryParse(parts[0]) ?? 0;
+        final month = int.tryParse(parts[1]) ?? 1;
+        final title = '${monthNames[month - 1]} $year';
+        final monthPhotos = grouped[key]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        sections.add(_buildGroupedColumn(context, title, monthPhotos));
+      }
+      return sections;
+    }
+
+    // Days
+    final Map<String, List<Photo>> grouped = {};
+    for (final x in datedPhotos) {
+      final t = x.time!;
+      final key = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+      grouped[key] = [...(grouped[key] ?? const []), x.photo];
+    }
+
+    final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+    for (final key in keys) {
+      final parts = key.split('-');
+      final year = int.tryParse(parts[0]) ?? 0;
+      final month = int.tryParse(parts[1]) ?? 1;
+      final day = int.tryParse(parts[2]) ?? 1;
+      final title = '${monthNames[month - 1]} $day, $year';
+      final dayPhotos = grouped[key]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      sections.add(_buildGroupedColumn(context, title, dayPhotos, titleSize: 16));
+    }
     return sections;
   }
 
-  Widget _buildGroupedColumn(BuildContext context, String title, int count, List<String> ids, {double leftPadding = 12, double titleSize = 20}) {
+  Widget _buildGroupedColumn(
+    BuildContext context,
+    String title,
+    List<Photo> groupedPhotos, {
+    double leftPadding = 12,
+    double titleSize = 20,
+  }) {
     return Padding(
       padding: EdgeInsets.only(left: leftPadding, top: 10, bottom: 12),
       child: Column(
@@ -118,28 +213,30 @@ class PhotoGridContent extends StatelessWidget {
         children: [
           Text(title, style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          _buildPhotoGrid(context, count, ids),
+          _buildPhotoGrid(context, groupedPhotos),
         ],
       ),
     );
   }
 
-  Widget _buildPhotoGrid(BuildContext context, int count, List<String> imageIds) {
-    return PhotoGridPlaceholder(
-      itemCount: count,
-      imageIds: imageIds,
+  Widget _buildPhotoGrid(BuildContext context, List<Photo> groupedPhotos) {
+    return PhotoGrid(
+      photos: groupedPhotos,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 4,
       crossAxisSpacing: 4,
       mainAxisSpacing: 4,
+      padding: EdgeInsets.zero,
       borderRadius: 8,
-      onItemTap: (index) => _openFullScreenView(context, imageIds[index]),
+      onItemTap: (index) => _openFullScreenView(context, groupedPhotos[index].id.toString(), groupedPhotos[index]),
       onItemLongPress: (index) {
+        final id = groupedPhotos[index].id;
+        if (id == null) return;
         if (onPhotoLongPress != null) {
-          onPhotoLongPress!(imageIds[index]);
+          onPhotoLongPress!(id.toString());
         } else {
-          GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', imageIds[index], () {});
+          GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', id.toString(), () {});
         }
       },
     );
@@ -177,7 +274,7 @@ class _PhotosViewState extends State<PhotosView> {
         Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 24.0),
+            padding: const EdgeInsets.only(bottom: 32.0),
             child: Container(
               constraints: const BoxConstraints(maxWidth: 500),
               margin: const EdgeInsets.symmetric(horizontal: 16),

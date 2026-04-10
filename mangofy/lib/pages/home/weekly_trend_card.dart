@@ -9,7 +9,7 @@ class OutbreakPredictionCard extends StatelessWidget {
   const OutbreakPredictionCard({
     super.key,
     this.insightText =
-        'Anthracnose spreading at 12 cases/day — velocity is accelerating, action advised.',
+        'Scan a leaf to build a weekly trend for outbreak prediction.',
     this.weeklyData,
     this.peakOverride,
     this.latestOverride,
@@ -21,7 +21,7 @@ class OutbreakPredictionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<double> data = weeklyData ?? _placeholderData;
+    final List<double> data = weeklyData ?? [];
 
     final int peak = peakOverride ??
         (data.isEmpty ? 0 : data.reduce((a, b) => a > b ? a : b).toInt());
@@ -123,6 +123,7 @@ class OutbreakPredictionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
@@ -136,7 +137,6 @@ class OutbreakPredictionCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     // Note: Ensure images/mangoleaves.png exists in your pubspec.yaml
                     Image.asset(
                       'images/mangoleaves.png',

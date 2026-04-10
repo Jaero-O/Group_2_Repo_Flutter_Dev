@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Grid widget for selecting photos in selection mode
 class PhotosSelectionGrid extends StatelessWidget {
@@ -25,6 +26,20 @@ class PhotosSelectionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final itemCount = allImageIds.length;
+
+    if (itemCount == 0) {
+      return Center(
+        child: Text(
+          'No images available',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    }
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),

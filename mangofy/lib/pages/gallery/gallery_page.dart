@@ -228,9 +228,11 @@ class _GalleryPageState extends State<GalleryPage> {
     if (isPhotosView) {
       return photos.map((photo) => photo.id.toString()).toList();
     } else {
-      final String contentKey = selectedAlbumTitle!;
-      final int itemCount = 15;
-      return List<String>.generate(itemCount, (index) => '${contentKey}_photo_$index');
+      final title = selectedAlbumTitle;
+      if (title == null) return <String>[];
+      final album = myTreesAlbums.where((a) => a.title == title).toList();
+      if (album.isEmpty) return <String>[];
+      return album.first.images;
     }
   }
 
@@ -275,10 +277,14 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Widget _buildBodyContent() {
     final bool isPhotoSelectionScreen = widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
+    final Map<int, Photo> photosById = {
+      for (final p in photos)
+        if (p.id != null) p.id!: p,
+    };
     if (!widget.isSelectionMode) {
       return isPhotosView
           ? PhotosView(onPhotoLongPress: _handlePhotoLongPress, photos: photos) 
-          : MyTreesPage(albums: myTreesAlbums, onAlbumLongPress: _handleAlbumLongPress); 
+          : MyTreesPage(albums: myTreesAlbums, onAlbumLongPress: _handleAlbumLongPress, photosById: photosById); 
     }
     if (isPhotoSelectionScreen) {
       return PhotosSelectionGrid(
@@ -293,6 +299,7 @@ class _GalleryPageState extends State<GalleryPage> {
         isSelectionMode: true,
         onAlbumSelected: (title) => setState(() => selectedAlbumTitle = title),
         onAlbumLongPress: null, 
+        photosById: photosById,
       );
     }
   }

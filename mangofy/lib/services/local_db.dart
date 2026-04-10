@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../model/scan_item.dart';
+import '../model/scan_summary_model.dart';
 
 class LocalDb {
   LocalDb._();
@@ -20,7 +21,7 @@ class LocalDb {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE pi_scans(
@@ -32,9 +33,24 @@ class LocalDb {
             image_url TEXT,
             checksum TEXT,
             source TEXT,
-            updated_at TEXT
+            updated_at TEXT,
+            disease TEXT,
+            confidence REAL,
+            severity_value REAL,
+            photo_id INTEGER,
+            scan_dir TEXT
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Add new columns for RasPi scan payload + gallery linkage.
+          await db.execute('ALTER TABLE pi_scans ADD COLUMN disease TEXT');
+          await db.execute('ALTER TABLE pi_scans ADD COLUMN confidence REAL');
+          await db.execute('ALTER TABLE pi_scans ADD COLUMN severity_value REAL');
+          await db.execute('ALTER TABLE pi_scans ADD COLUMN photo_id INTEGER');
+          await db.execute('ALTER TABLE pi_scans ADD COLUMN scan_dir TEXT');
+        }
       },
     );
   }
@@ -52,6 +68,60 @@ class LocalDb {
     final db = await database;
     final rows = await db.query('pi_scans', orderBy: 'timestamp DESC');
     return rows.map((row) => ScanItem.fromJson(row)).toList();
+  }
+
+  Future<void> setScanPhotoId(int scanId, int photoId) async {
+    final db = await database;
+    await db.update(
+      'pi_scans',
+      {'photo_id': photoId},
+      where: 'id = ?',
+      whereArgs: [scanId],
+    );
+  }
+
+  Future<ScanSummary> getScanSummary() async {
+    final db = await database;
+    final rows = await db.query('pi_scans');
+
+    int total = rows.length;
+    int healthy = 0;
+    int moderate = 0;
+    int severe = 0;
+
+    for (final row in rows) {
+      final severity = (row['severity_value'] is num)
+          ? (row['severity_value'] as num).toDouble()
+          : double.tryParse(row['severity_value']?.toString() ?? '') ?? 0.0;
+
+      if (severity > 40.0) {
+        severe++;
+      } else if (severity > 5.0) {
+        moderate++;
+      } else {
+        healthy++;
+      }
+    }
+
+    return ScanSummary(
+      totalScans: total,
+      healthyCount: healthy,
+      moderateCount: moderate,
+      severeCount: severe,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getDiseaseDistribution() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        COALESCE(NULLIF(TRIM(disease), ''), 'Unknown') AS disease,
+        COUNT(*) AS count
+      FROM pi_scans
+      GROUP BY disease
+      ORDER BY count DESC
+    ''');
+    return rows;
   }
 
   Future<ScanItem?> getScanById(int id) async {

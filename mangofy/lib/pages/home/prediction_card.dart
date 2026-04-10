@@ -9,11 +9,11 @@ class PredictionCard extends StatelessWidget {
 
   const PredictionCard({
     super.key,
-    this.spreadRisk = 0.53,
-    this.humidityRisk = 0.92,
-    this.recovery = 0.32,
+    this.spreadRisk = 0.0,
+    this.humidityRisk = 0.0,
+    this.recovery = 0.0,
     this.insightText =
-        'Anthracnose spreading at 12 cases/day — velocity is accelerating, action advised.',
+        'Scan a leaf to generate the 30-day prediction for your crop.',
   });
 
   @override
@@ -84,6 +84,7 @@ class PredictionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
@@ -97,7 +98,6 @@ class PredictionCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     // Using an Icon as a fallback if the image is missing
                     Image.asset(
                       'images/mangoleaves.png',

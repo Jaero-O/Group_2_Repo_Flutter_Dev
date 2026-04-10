@@ -41,16 +41,42 @@ class PiApi {
     final uri = _makeUri(baseUrl, '/api/scan/all');
     final resp = await http.get(uri).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) throw Exception('Failed fetch all scans from Pi at $baseUrl');
-    final arr = jsonDecode(resp.body) as List;
-    return arr.map((e) => ScanItem.fromJson(e as Map<String, dynamic>)).toList();
+    final decoded = jsonDecode(resp.body);
+    final List<dynamic> arr;
+    if (decoded is List) {
+      arr = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      final dynamic inner = decoded['scans'] ?? decoded['results'] ?? decoded['data'];
+      if (inner is List) {
+        arr = inner;
+      } else {
+        arr = [decoded];
+      }
+    } else {
+      arr = <dynamic>[];
+    }
+    return arr.whereType<Map>().map((e) => ScanItem.fromJson(e.cast<String, dynamic>())).toList();
   }
 
   Future<List<ScanItem>> getScansSince(String baseUrl, String timestamp) async {
     final uri = _makeUri(baseUrl, '/api/scan/since/$timestamp');
     final resp = await http.get(uri).timeout(const Duration(seconds: 10));
     if (resp.statusCode != 200) throw Exception('Failed fetch scans since $timestamp from Pi at $baseUrl');
-    final arr = jsonDecode(resp.body) as List;
-    return arr.map((e) => ScanItem.fromJson(e as Map<String, dynamic>)).toList();
+    final decoded = jsonDecode(resp.body);
+    final List<dynamic> arr;
+    if (decoded is List) {
+      arr = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      final dynamic inner = decoded['scans'] ?? decoded['results'] ?? decoded['data'];
+      if (inner is List) {
+        arr = inner;
+      } else {
+        arr = [decoded];
+      }
+    } else {
+      arr = <dynamic>[];
+    }
+    return arr.whereType<Map>().map((e) => ScanItem.fromJson(e.cast<String, dynamic>())).toList();
   }
 
   Future<String> downloadImage(ScanItem item, String baseUrl) async {

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:io';
+import '../../model/photo.dart';
+import '../../services/database_service.dart';
+import '../gallery/photo_widgets.dart';
 
 class ScanDetailsPage extends StatelessWidget {
   final String scanTitle;      // Title of the scan
@@ -7,6 +11,8 @@ class ScanDetailsPage extends StatelessWidget {
   final String dateScanned;    // Date of scan
   final String severityValue;  // Severity percentage value
   final Color severityColor;   // Color representing severity level
+  final int? photoId;          // Linked gallery photo ID (if imported from RasPi)
+  final String? localImagePath; // Local downloaded image file path (fallback)
 
   const ScanDetailsPage({
     super.key,
@@ -15,6 +21,8 @@ class ScanDetailsPage extends StatelessWidget {
     required this.dateScanned,
     required this.severityValue,
     required this.severityColor,
+    this.photoId,
+    this.localImagePath,
   });
 
   // Placeholder for long description text
@@ -88,6 +96,50 @@ class ScanDetailsPage extends StatelessWidget {
     );
   }
 
+  Widget _buildImagePreview() {
+    if (photoId != null) {
+      return FutureBuilder<Map<String, dynamic>?>(
+        future: DatabaseService.instance.getPhotoById(photoId!),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final data = snapshot.data;
+          if (data != null) {
+            final photo = Photo.fromMap(data);
+            return PhotoGridItem(photo: photo, borderRadius: 8);
+          }
+          return Image.asset(
+            'images/leaf.png',
+            fit: BoxFit.cover,
+            height: 200,
+            width: double.infinity,
+          );
+        },
+      );
+    }
+
+    final path = localImagePath;
+    if (path != null && path.isNotEmpty) {
+      final file = File(path);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          height: 200,
+          width: double.infinity,
+        );
+      }
+    }
+
+    return Image.asset(
+      'images/leaf.png',
+      fit: BoxFit.cover,
+      height: 200,
+      width: double.infinity,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,12 +173,7 @@ class ScanDetailsPage extends StatelessWidget {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.asset(
-                                  'images/leaf.png', 
-                                  fit: BoxFit.cover,
-                                  height: 200,
-                                  width: double.infinity,
-                                ),
+                                child: _buildImagePreview(),
                               ),
                             ),
 

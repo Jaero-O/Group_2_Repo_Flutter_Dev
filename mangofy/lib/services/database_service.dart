@@ -404,6 +404,42 @@ class DatabaseService {
     return rows.isNotEmpty;
   }
 
+  Future<int?> getPhotoIdByNameTimestamp(String name, String timestamp) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      photosTable,
+      columns: [colId],
+      where: "$colPhotoName = ? AND $colPhotoTimestamp = ?",
+      whereArgs: [name, timestamp],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first[colId] as int?;
+  }
+
+  Future<Map<String, dynamic>?> getPhotoById(int id) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      photosTable,
+      where: "$colId = ?",
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getPhotosByIds(List<int> ids) async {
+    if (ids.isEmpty) return <Map<String, dynamic>>[];
+    final db = await instance.database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    return db.query(
+      photosTable,
+      where: "$colId IN ($placeholders)",
+      whereArgs: ids,
+    );
+  }
+
   // DB Close / Reset
   Future<void> close() async {
     final db = _database;

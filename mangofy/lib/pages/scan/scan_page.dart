@@ -3,8 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'scan_details_page.dart';
 import 'scan_constants.dart';
 import '../../ui/green_header_background.dart';
-import '../../services/database_service.dart';
-import '../../model/scan_model.dart';
+import '../../services/local_db.dart';
+import '../../services/sync_service.dart';
+import '../../model/scan_item.dart';
 
 // Displays history of leaf scans, fetching data from the database.
 class ScanPage extends StatefulWidget {
@@ -20,8 +21,8 @@ enum FilterOption { all, healthy, moderate, severe }
 
 class _ScanPageState extends State<ScanPage> {
   // State variables
-  List<ScanRecord> _scanHistory = [];
-  List<ScanRecord> _displayScanHistory = []; // The list shown to the user
+  List<ScanItem> _scanHistory = [];
+  List<ScanItem> _displayScanHistory = []; // The list shown to the user
   bool _isLoading = true;
 
   // Sort and Filter state
@@ -32,6 +33,43 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _seedDummyDataIfEmpty();
+    SyncService.instance.lastSyncNotifier.addListener(_loadScanHistory);
+  }
+
+  @override
+  void dispose() {
+    SyncService.instance.lastSyncNotifier.removeListener(_loadScanHistory);
+    super.dispose();
+  }
+
+  String _statusFor(ScanItem item) {
+    final v = item.severityValue;
+    if (v > 40.0) return 'Severe';
+    if (v > 5.0) return 'Moderate';
+    return 'Healthy';
+  }
+
+  Color _primaryColorForStatus(String status) {
+    switch (status.toLowerCase()) {
+      case 'healthy':
+        return const Color(0xFF4CAF50);
+      case 'moderate':
+        return const Color(0xFFF2DA00);
+      case 'severe':
+        return const Color(0xFFF44336);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _dateLabelFor(ScanItem item) {
+    final parsed = DateTime.tryParse(item.timestamp);
+    if (parsed == null) return item.timestamp;
+    final local = parsed.toLocal();
+    final yyyy = local.year.toString().padLeft(4, '0');
+    final mm = local.month.toString().padLeft(2, '0');
+    final dd = local.day.toString().padLeft(2, '0');
+    return '$yyyy-$mm-$dd';
   }
 
   // Loads the scan history without inserting placeholder data.
@@ -41,11 +79,7 @@ class _ScanPageState extends State<ScanPage> {
 
   // Loads all scan records from the database.
   Future<void> _loadScanHistory() async {
-    final dbRecords = await DatabaseService.instance.getAllScans();
-
-    final List<ScanRecord> history = dbRecords
-        .map((map) => ScanRecord.fromMap(map))
-        .toList();
+    final List<ScanItem> history = await LocalDb.instance.getAllScans();
 
     if (mounted) {
       setState(() {
@@ -60,13 +94,13 @@ class _ScanPageState extends State<ScanPage> {
 
   void _applySortAndFilter() {
     // Start with the full history list
-    List<ScanRecord> filteredList = List.from(_scanHistory);
+    List<ScanItem> filteredList = List.from(_scanHistory);
 
     // Apply Filtering
     if (_currentFilter != FilterOption.all) {
       final String filterStatus = _currentFilter.toString().split('.').last;
       filteredList = filteredList
-          .where((record) => record.status.toLowerCase() == filterStatus)
+          .where((record) => _statusFor(record).toLowerCase() == filterStatus)
           .toList();
     }
 
@@ -230,7 +264,7 @@ class _ScanPageState extends State<ScanPage> {
     final int totalScans = _scanHistory.length;
     // Count items where status is explicitly 'Healthy'
     final int healthyScans = _scanHistory
-        .where((record) => record.status == 'Healthy')
+        .where((record) => _statusFor(record) == 'Healthy')
         .length;
     // Infected - Moderate + Severe
     final int infectedScans = totalScans - healthyScans;
@@ -301,11 +335,11 @@ class _ScanPageState extends State<ScanPage> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                       Text(
-                                        'No scans yet',
+                                        'No scans yet.',
                                         style: GoogleFonts.inter(
-                                          color: Colors.grey[600],
                                           fontSize: 16,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.grey,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
@@ -313,14 +347,16 @@ class _ScanPageState extends State<ScanPage> {
                                       Padding(
                                         padding: const EdgeInsets.symmetric(horizontal: 40),
                                         child: Text(
-                                          'Scan a Raspberry Pi QR code to import images automatically.',
+                                          'Scan QR code to import images automatically.',
                                           style: GoogleFonts.inter(
-                                            color: Colors.grey[600],
-                                            fontSize: 14,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w400,
+                                            color: Colors.grey,
                                           ),
                                           textAlign: TextAlign.center,
                                         ),
                                       ),
+                                      const SizedBox(height: 90),
                                   ],
                                 ),
                               )
@@ -334,15 +370,18 @@ class _ScanPageState extends State<ScanPage> {
                             ),
                             itemBuilder: (context, index) {
                               final item = _displayScanHistory[index];
+                              final status = _statusFor(item);
+                              final color = _primaryColorForStatus(status);
                               return _buildScanHistoryItem(
                                 context,
-                                severityValue: item.severityValue
-                                    .toStringAsFixed(1),
-                                status: item.status,
-                                primaryColor: item.primaryColor,
-                                disease: item.disease,
-                                date: item.date,
+                                severityValue: item.severityValue.toStringAsFixed(1),
+                                status: status,
+                                primaryColor: color,
+                                disease: item.disease.isNotEmpty ? item.disease : item.title,
+                                date: _dateLabelFor(item),
                                 index: index,
+                                photoId: item.photoId,
+                                localImagePath: item.imagePath,
                               );
                             },
                             separatorBuilder: (context, index) {
@@ -526,6 +565,8 @@ class _ScanPageState extends State<ScanPage> {
     required String disease,
     required String date,
     required int index,
+    int? photoId,
+    String? localImagePath,
   }) {
     return GestureDetector(
       onTap: () {
@@ -538,6 +579,8 @@ class _ScanPageState extends State<ScanPage> {
               dateScanned: date,
               severityValue: severityValue,
               severityColor: primaryColor,
+              photoId: photoId,
+              localImagePath: localImagePath,
             ),
           ),
         );

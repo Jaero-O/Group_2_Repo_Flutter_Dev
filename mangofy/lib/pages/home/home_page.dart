@@ -4,8 +4,9 @@ import 'weekly_trend_card.dart';
 import 'prediction_card.dart';
 import 'recommended_actions_card.dart';
 import 'severity_distributions_card.dart';
+import 'disease_data.dart';
 import 'notifications_page.dart'; // Ensure this file is created
-import '../../services/database_service.dart';
+import '../../services/local_db.dart';
 import '../../services/sync_service.dart';
 import '../../model/scan_summary_model.dart';
 
@@ -18,11 +19,13 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late Future<ScanSummary> _summaryFuture;
+  late Future<List<DiseaseData>> _distributionFuture;
 
   @override
   void initState() {
     super.initState();
-    _summaryFuture = DatabaseService.instance.getScanSummary();
+    _summaryFuture = LocalDb.instance.getScanSummary();
+    _distributionFuture = _loadDiseaseDistribution();
     SyncService.instance.lastSyncNotifier.addListener(_refresh);
   }
 
@@ -52,8 +55,36 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refresh() async {
     setState(() {
-      _summaryFuture = DatabaseService.instance.getScanSummary();
+      _summaryFuture = LocalDb.instance.getScanSummary();
+      _distributionFuture = _loadDiseaseDistribution();
     });
+  }
+
+  Future<List<DiseaseData>> _loadDiseaseDistribution() async {
+    final rows = await LocalDb.instance.getDiseaseDistribution();
+    if (rows.isEmpty) return <DiseaseData>[];
+
+    final List<DiseaseData> items = [];
+    for (int i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final name = row['disease']?.toString() ?? 'Unknown';
+      final count = row['count'] is int
+          ? row['count'] as int
+          : int.tryParse(row['count']?.toString() ?? '') ?? 0;
+      if (count <= 0) continue;
+      items.add(DiseaseData(
+        name: name,
+        count: count,
+        color: DiseaseDistributionCard.colorForDisease(name, i),
+      ));
+    }
+
+    if (items.length <= 4) return items;
+
+    final top = items.sublist(0, 3);
+    final othersCount = items.sublist(3).fold<int>(0, (sum, item) => sum + item.count);
+    top.add(DiseaseData(name: 'Others', count: othersCount, color: const Color(0xFFBDBDBD)));
+    return top;
   }
 
   @override
@@ -162,6 +193,30 @@ class _HomePageState extends State<HomePage> {
                                       100)
                               : 0,
                           trendData: trendData,
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Disease Distribution Card
+                        FutureBuilder<List<DiseaseData>>(
+                          future: _distributionFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const SizedBox(
+                                height: 260,
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            if (snapshot.hasError) {
+                              return const DiseaseDistributionCard(diseases: [], totalCases: 0);
+                            }
+                            final diseases = snapshot.data!;
+                            final total = diseases.fold<int>(0, (sum, item) => sum + item.count);
+                            return DiseaseDistributionCard(
+                              diseases: diseases,
+                              totalCases: total,
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 30),

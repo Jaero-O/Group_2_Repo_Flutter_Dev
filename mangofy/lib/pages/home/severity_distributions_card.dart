@@ -113,23 +113,13 @@ class SeverityDistributionsCard extends StatelessWidget {
       sInt = 100 - hInt - mInt;
 
       if (sInt < 0) {
-        if (hInt > mInt) hInt += sInt; else mInt += sInt;
-        sInt = 0; 
+        if (hInt > mInt) {
+          hInt += sInt;
+        } else {
+          mInt += sInt;
+        }
+        sInt = 0;
       }
-    }
-    if (totalScans == 0) {
-      return Card(
-        color: const Color(0xFFFAFAFA),
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: const Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'No scan data yet. Press Connect and scan a leaf to populate severity distribution.',
-            style: TextStyle(color: Color(0xFF777777), fontSize: 14),
-          ),
-        ),
-      );
     }
 
     return Card(
@@ -143,30 +133,26 @@ class SeverityDistributionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Only display bars if their value is > 0
-            if (hInt > 0)
-              _buildSeverityBar(
-                label: 'Healthy',
-                percentage: '$hInt%',
-                range: '(0% - 5%)',
-                gradient: healthyGradient,
-              ),
+            _buildSeverityBar(
+              label: 'Healthy',
+              percentage: '$hInt%',
+              range: '(0% - 5%)',
+              gradient: healthyGradient,
+            ),
 
-            if (mInt > 0)
-              _buildSeverityBar(
-                label: 'Moderate',
-                percentage: '$mInt%',
-                range: '(6% - 40%)',
-                gradient: moderateGradient,
-              ),
+            _buildSeverityBar(
+              label: 'Moderate',
+              percentage: '$mInt%',
+              range: '(6% - 40%)',
+              gradient: moderateGradient,
+            ),
 
-            if (sInt > 0)
-              _buildSeverityBar(
-                label: 'Severe',
-                percentage: '$sInt%',
-                range: '(>40%)',
-                gradient: severeGradient,
-              ),
+            _buildSeverityBar(
+              label: 'Severe',
+              percentage: '$sInt%',
+              range: '(>40%)',
+              gradient: severeGradient,
+            ),
           ],
         ),
       ),

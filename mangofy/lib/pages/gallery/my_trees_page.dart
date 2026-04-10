@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'album_photos_page.dart';
 import '../../model/my_tree_model.dart'; 
+import '../../model/photo.dart';
+import 'photo_widgets.dart';
 
 // Type definition for the callback when an album is long-pressed
 typedef AlbumLongPressCallback = void Function(MyTree album);
@@ -19,17 +22,39 @@ class MyTreesPage extends StatelessWidget {
   // List of albums to display
   final List<MyTree> albums;
 
+  // Optional lookup for real photo thumbnails (keyed by Photo.id)
+  final Map<int, Photo> photosById;
+
   const MyTreesPage({
     super.key,
     this.isSelectionMode = false,
     this.onAlbumSelected,
     this.albums = const [],
     this.onAlbumLongPress, 
+    this.photosById = const {},
   });
 
   @override
   Widget build(BuildContext context) {
     final displayAlbums = albums;
+
+    if (displayAlbums.isEmpty) {
+      final message = isSelectionMode ? 'No albums available' : 'No albums yet. \nTap + create one.';
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: Colors.grey,
+            ),
+          ),
+        ),
+      );
+    }
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -45,16 +70,19 @@ class MyTreesPage extends StatelessWidget {
         final title = album.title;
         final location = album.location;
         final images = album.images;
-        final String coverImage;
 
-        if (album.coverImage.isNotEmpty) {
-          coverImage = album.coverImage;
-        } else if (images.isNotEmpty &&
-            (images.last.contains('/') || images.last.contains('.'))) {
-          coverImage = images.last;
-        } else {
-          coverImage = 'images/leaf.png';
+        Photo? coverPhoto;
+        for (final rawId in images.reversed) {
+          final id = int.tryParse(rawId);
+          if (id == null) continue;
+          final photo = photosById[id];
+          if (photo != null) {
+            coverPhoto = photo;
+            break;
+          }
         }
+
+        final String coverImage = album.coverImage.isNotEmpty ? album.coverImage : 'images/leaf.png';
 
         return GestureDetector(
           onTap: () {
@@ -92,10 +120,15 @@ class MyTreesPage extends StatelessWidget {
                           offset: const Offset(0, 4),
                         ),
                       ],
-                      image: DecorationImage(
-                        image: AssetImage(coverImage),
-                        fit: BoxFit.cover,
-                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: coverPhoto != null
+                          ? PhotoGridItem(photo: coverPhoto!, borderRadius: 0)
+                          : Image.asset(
+                              coverImage,
+                              fit: BoxFit.cover,
+                            ),
                     ),
                   ),
                 ),

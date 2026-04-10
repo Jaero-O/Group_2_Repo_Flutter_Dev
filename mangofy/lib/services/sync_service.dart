@@ -118,7 +118,7 @@ class SyncService {
     for (final remote in scans) {
       if (remote.imageUrl.isNotEmpty) {
         try {
-          final localPath = await PiApi.instance.downloadImage(remote, baseUrl ?? remote.imageUrl);
+          final localPath = await PiApi.instance.downloadImage(remote, baseUrl ?? PiApi.defaultBaseUrl);
           final updated = ScanItem(
             id: remote.id,
             title: remote.title,
@@ -129,20 +129,47 @@ class SyncService {
             checksum: remote.checksum,
             source: remote.source,
             updatedAt: remote.updatedAt,
+            disease: remote.disease,
+            confidence: remote.confidence,
+            severityValue: remote.severityValue,
+            photoId: remote.photoId,
+            scanDir: remote.scanDir,
           );
           await LocalDb.instance.upsertScan(updated);
 
           final photoName = remote.title.isNotEmpty ? remote.title : 'Scan ${remote.id}';
           final photoTimestamp = remote.timestamp.isNotEmpty ? remote.timestamp : DateTime.now().toIso8601String();
 
-          final exists = await DatabaseService.instance.photoExists(photoName, photoTimestamp);
-          if (!exists) {
+          int? photoId = await DatabaseService.instance.getPhotoIdByNameTimestamp(photoName, photoTimestamp);
+          if (photoId == null) {
             final bytes = await File(localPath).readAsBytes();
             final photoData = base64Encode(bytes);
-            await DatabaseService.instance.insertPhoto(
+            photoId = await DatabaseService.instance.insertPhoto(
               name: photoName,
               data: photoData,
               timestamp: photoTimestamp,
+            );
+          }
+
+          if (photoId > 0) {
+            await LocalDb.instance.setScanPhotoId(remote.id, photoId);
+            await LocalDb.instance.upsertScan(
+              ScanItem(
+                id: updated.id,
+                title: updated.title,
+                description: updated.description,
+                timestamp: updated.timestamp,
+                imagePath: updated.imagePath,
+                imageUrl: updated.imageUrl,
+                checksum: updated.checksum,
+                source: updated.source,
+                updatedAt: updated.updatedAt,
+                disease: updated.disease,
+                confidence: updated.confidence,
+                severityValue: updated.severityValue,
+                photoId: photoId,
+                scanDir: updated.scanDir,
+              ),
             );
           }
         } catch (_) {

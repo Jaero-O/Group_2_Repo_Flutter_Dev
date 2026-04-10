@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'photo_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
+import '../../model/photo.dart';
+import '../../services/database_service.dart';
 
-class AlbumPhotosPage extends StatelessWidget {
+class AlbumPhotosPage extends StatefulWidget {
   final String albumTitle;
   final List<String> images; 
 
@@ -12,6 +14,28 @@ class AlbumPhotosPage extends StatelessWidget {
     required this.albumTitle,
     this.images = const [], 
   });
+
+  @override
+  State<AlbumPhotosPage> createState() => _AlbumPhotosPageState();
+}
+
+class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
+  late Future<List<Photo>> _albumPhotosFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _albumPhotosFuture = _loadAlbumPhotos();
+  }
+
+  Future<List<Photo>> _loadAlbumPhotos() async {
+    final ids = widget.images.map(int.tryParse).whereType<int>().toList();
+    if (ids.isEmpty) return <Photo>[];
+    final maps = await DatabaseService.instance.getPhotosByIds(ids);
+    final photos = maps.map((m) => Photo.fromMap(m)).where((p) => p.id != null).toList();
+    final byId = {for (final p in photos) p.id!: p};
+    return [for (final id in ids) if (byId[id] != null) byId[id]!];
+  }
 
   // --- HELPER TO SHOW CENTERED SUCCESS ANIMATION ---
   void _showSuccessAnimation(BuildContext context, String message) {
@@ -98,13 +122,13 @@ class AlbumPhotosPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageList = images.isEmpty ? List.generate(15, (i) => 'album_photo_$i') : images;
+    final placeholderIds = widget.images.isEmpty ? List.generate(15, (i) => 'album_photo_$i') : widget.images;
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          albumTitle,
+          widget.albumTitle,
           style: GoogleFonts.inter(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -115,21 +139,55 @@ class AlbumPhotosPage extends StatelessWidget {
         elevation: 0, 
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Edge spacing
-        child: PhotoGridPlaceholder(
-          itemCount: imageList.length, 
-          imageIds: imageList, 
-          crossAxisCount: 3, 
-          onItemTap: (index) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => FullScreenPhotoView(imagePath: imageList[index]),
-              ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: FutureBuilder<List<Photo>>(
+          future: _albumPhotosFuture,
+          builder: (context, snapshot) {
+            final photos = snapshot.data ?? const <Photo>[];
+            if (snapshot.connectionState == ConnectionState.waiting && photos.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (photos.isNotEmpty) {
+              return PhotoGrid(
+                photos: photos,
+                crossAxisCount: 3,
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 4,
+                padding: const EdgeInsets.all(4),
+                borderRadius: 8,
+                onItemTap: (index) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FullScreenPhotoView(photo: photos[index]),
+                    ),
+                  );
+                },
+                onItemLongPress: (index) {
+                  final id = photos[index].id;
+                  if (id != null) _showPhotoOptions(context, id.toString());
+                },
+              );
+            }
+
+            // Fallback: placeholder grid for non-ID album entries.
+            return PhotoGridPlaceholder(
+              itemCount: placeholderIds.length,
+              imageIds: placeholderIds,
+              crossAxisCount: 3,
+              onItemTap: (index) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FullScreenPhotoView(imagePath: placeholderIds[index]),
+                  ),
+                );
+              },
+              onItemLongPress: (index) {
+                _showPhotoOptions(context, placeholderIds[index]);
+              },
             );
-          },
-          onItemLongPress: (index) {
-            _showPhotoOptions(context, imageList[index]);
           },
         ),
       ),

@@ -31,8 +31,6 @@ class RecommendedActionsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final int totalDiseased = summary.moderateCount + summary.severeCount;
 
-    if (totalDiseased == 0) return const SizedBox.shrink();
-
     return Card(
       color: const Color(0xFFFAFAFA),
       elevation: 3,
@@ -41,58 +39,60 @@ class RecommendedActionsCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: _actions.asMap().entries.map((entry) {
-            final int index = entry.key;
-            final Map<String, dynamic> action = entry.value;
-            return Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: (action['color'] as Color).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
+          children: [
+            ..._actions.asMap().entries.map((entry) {
+              final int index = entry.key;
+              final Map<String, dynamic> action = entry.value;
+              return Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (action['color'] as Color).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          action['icon'] as IconData,
+                          color: action['color'] as Color,
+                          size: 24,
+                        ),
                       ),
-                      child: Icon(
-                        action['icon'] as IconData,
-                        color: action['color'] as Color,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            action['title'] as String,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              action['title'] as String,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            action['desc'] as String,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF777777),
-                              height: 1.4,
+                            const SizedBox(height: 2),
+                            Text(
+                              action['desc'] as String,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF777777),
+                                height: 1.4,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                if (index < _actions.length - 1)
-                  const Divider(height: 24, thickness: 1, color: Color(0xFFEEEEEE)),
-              ],
-            );
-          }).toList(),
+                    ],
+                  ),
+                  if (index < _actions.length - 1)
+                    const Divider(height: 24, thickness: 1, color: Color(0xFFEEEEEE)),
+                ],
+              );
+            }).toList(),
+          ],
         ),
       ),
     );
