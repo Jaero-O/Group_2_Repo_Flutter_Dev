@@ -20,44 +20,85 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<ScanSummary> _summaryFuture;
   late Future<List<DiseaseData>> _distributionFuture;
+  late Future<List<double>> _trendFuture;
+  late Future<String> _primaryDiseaseFuture;
+  bool _isRefreshing = false;
+  bool _hasPendingRefresh = false;
 
   @override
   void initState() {
     super.initState();
     _summaryFuture = LocalDb.instance.getScanSummary();
     _distributionFuture = _loadDiseaseDistribution();
-    SyncService.instance.lastSyncNotifier.addListener(_refresh);
+    _trendFuture = LocalDb.instance.getWeeklyTrend();
+    _primaryDiseaseFuture = LocalDb.instance.getPrimaryDiseaseName();
+    SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
   }
 
   @override
   void dispose() {
-    SyncService.instance.lastSyncNotifier.removeListener(_refresh);
+    SyncService.instance.lastSyncNotifier.removeListener(_onSyncUpdated);
     super.dispose();
+  }
+
+  void _onSyncUpdated() {
+    _refresh();
   }
 
   ThreatLevel _resolveThreatLevel(ScanSummary summary) {
     final int total = summary.totalScans;
     if (total == 0) return ThreatLevel.low;
-    final double severeRatio = summary.severeCount / total;
-    if (severeRatio > 0.5) return ThreatLevel.critical;
-    if (severeRatio > 0.3) return ThreatLevel.high;
-    if (severeRatio > 0.1) return ThreatLevel.moderate;
+    final double advancedStageRatio = summary.advancedStageCount / total;
+    if (advancedStageRatio > 0.5) return ThreatLevel.critical;
+    if (advancedStageRatio > 0.3) return ThreatLevel.high;
+    if (advancedStageRatio > 0.1) return ThreatLevel.moderate;
     return ThreatLevel.low;
   }
 
   List<double> _resolveTrendData(ScanSummary summary) {
     return [
       summary.healthyCount.toDouble(),
-      summary.moderateCount.toDouble(),
-      summary.severeCount.toDouble(),
+      summary.earlyStageCount.toDouble(),
+      summary.advancedStageCount.toDouble(),
     ];
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _summaryFuture = LocalDb.instance.getScanSummary();
-      _distributionFuture = _loadDiseaseDistribution();
-    });
+    if (_isRefreshing) {
+      _hasPendingRefresh = true;
+      return;
+    }
+
+    _isRefreshing = true;
+
+    try {
+      final summaryFuture = LocalDb.instance.getScanSummary();
+      final distributionFuture = _loadDiseaseDistribution();
+      final trendFuture = LocalDb.instance.getWeeklyTrend();
+      final primaryDiseaseFuture = LocalDb.instance.getPrimaryDiseaseName();
+
+      if (mounted) {
+        setState(() {
+          _summaryFuture = summaryFuture;
+          _distributionFuture = distributionFuture;
+          _trendFuture = trendFuture;
+          _primaryDiseaseFuture = primaryDiseaseFuture;
+        });
+      }
+
+      await Future.wait([
+        summaryFuture,
+        distributionFuture,
+        trendFuture,
+        primaryDiseaseFuture,
+      ], eagerError: false);
+    } finally {
+      _isRefreshing = false;
+      if (_hasPendingRefresh) {
+        _hasPendingRefresh = false;
+        _refresh();
+      }
+    }
   }
 
   Future<List<DiseaseData>> _loadDiseaseDistribution() async {
@@ -72,18 +113,28 @@ class _HomePageState extends State<HomePage> {
           ? row['count'] as int
           : int.tryParse(row['count']?.toString() ?? '') ?? 0;
       if (count <= 0) continue;
-      items.add(DiseaseData(
-        name: name,
-        count: count,
-        color: DiseaseDistributionCard.colorForDisease(name, i),
-      ));
+      items.add(
+        DiseaseData(
+          name: name,
+          count: count,
+          color: DiseaseDistributionCard.colorForDisease(name, i),
+        ),
+      );
     }
 
     if (items.length <= 4) return items;
 
     final top = items.sublist(0, 3);
-    final othersCount = items.sublist(3).fold<int>(0, (sum, item) => sum + item.count);
-    top.add(DiseaseData(name: 'Others', count: othersCount, color: const Color(0xFFBDBDBD)));
+    final othersCount = items
+        .sublist(3)
+        .fold<int>(0, (sum, item) => sum + item.count);
+    top.add(
+      DiseaseData(
+        name: 'Others',
+        count: othersCount,
+        color: const Color(0xFFBDBDBD),
+      ),
+    );
     return top;
   }
 
@@ -105,8 +156,11 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: Colors.red),
+                      const Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: Colors.red,
+                      ),
                       const SizedBox(height: 12),
                       const Text('Failed to load data.'),
                       const SizedBox(height: 12),
@@ -119,16 +173,17 @@ class _HomePageState extends State<HomePage> {
                 );
               }
 
-              final ScanSummary summaryData = snapshot.data ??
+              final ScanSummary summaryData =
+                  snapshot.data ??
                   ScanSummary(
                     totalScans: 0,
                     healthyCount: 0,
-                    moderateCount: 0,
-                    severeCount: 0,
+                    earlyStageCount: 0,
+                    advancedStageCount: 0,
                   );
 
               final int diseasedCount =
-                  summaryData.moderateCount + summaryData.severeCount;
+                  summaryData.earlyStageCount + summaryData.advancedStageCount;
               final ThreatLevel level = _resolveThreatLevel(summaryData);
               final List<double> trendData = _resolveTrendData(summaryData);
 
@@ -170,7 +225,8 @@ class _HomePageState extends State<HomePage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => const NotificationsPage(),
+                                      builder: (context) =>
+                                          const NotificationsPage(),
                                     ),
                                   );
                                 },
@@ -182,17 +238,25 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 12),
 
                         // Primary Threat Card
-                        PrimaryThreatCard(
-                          diseaseName: 'Anthracnose',
-                          scientificName: 'Colletotrichum gloeosporioides',
-                          activeCases: diseasedCount,
-                          threatLevel: level,
-                          weeklyTrendPercent: summaryData.totalScans > 0
-                              ? (summaryData.severeCount /
-                                      summaryData.totalScans *
-                                      100)
-                              : 0,
-                          trendData: trendData,
+                        FutureBuilder<String>(
+                          future: _primaryDiseaseFuture,
+                          builder: (context, diseaseSnapshot) {
+                            final primaryDisease =
+                                diseaseSnapshot.data ?? 'No Active Disease';
+                            return PrimaryThreatCard(
+                              diseaseName: primaryDisease,
+                              scientificName:
+                                  'Detected from synced RasPi scans',
+                              activeCases: diseasedCount,
+                              threatLevel: level,
+                              weeklyTrendPercent: summaryData.totalScans > 0
+                                  ? (summaryData.advancedStageCount /
+                                        summaryData.totalScans *
+                                        100)
+                                  : 0,
+                              trendData: trendData,
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 20),
@@ -201,17 +265,26 @@ class _HomePageState extends State<HomePage> {
                         FutureBuilder<List<DiseaseData>>(
                           future: _distributionFuture,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
                               return const SizedBox(
                                 height: 260,
-                                child: Center(child: CircularProgressIndicator()),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                               );
                             }
                             if (snapshot.hasError) {
-                              return const DiseaseDistributionCard(diseases: [], totalCases: 0);
+                              return const DiseaseDistributionCard(
+                                diseases: [],
+                                totalCases: 0,
+                              );
                             }
                             final diseases = snapshot.data!;
-                            final total = diseases.fold<int>(0, (sum, item) => sum + item.count);
+                            final total = diseases.fold<int>(
+                              0,
+                              (sum, item) => sum + item.count,
+                            );
                             return DiseaseDistributionCard(
                               diseases: diseases,
                               totalCases: total,
@@ -222,7 +295,15 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 30),
 
                         // Outbreak Prediction Card (Title moved outside within the widget)
-                        const OutbreakPredictionCard(),
+                        FutureBuilder<List<double>>(
+                          future: _trendFuture,
+                          builder: (context, trendSnapshot) {
+                            final trendData = trendSnapshot.data ?? [];
+                            return OutbreakPredictionCard(
+                              weeklyData: trendData,
+                            );
+                          },
+                        ),
 
                         const SizedBox(height: 30),
 

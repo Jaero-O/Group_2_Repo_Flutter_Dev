@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../model/pi_qr_data.dart';
 import '../model/scan_item.dart';
-import 'database_service.dart';
 import 'hotspot_service.dart';
 import 'local_db.dart';
 import 'pi_api.dart';
@@ -43,9 +41,13 @@ class SyncService {
 
   final ValueNotifier<DateTime?> lastSyncNotifier = ValueNotifier(null);
   final ValueNotifier<SyncProgress?> progressNotifier = ValueNotifier(null);
-  final ValueNotifier<SyncDiagnostics?> diagnosticsNotifier = ValueNotifier(null);
+  final ValueNotifier<SyncDiagnostics?> diagnosticsNotifier = ValueNotifier(
+    null,
+  );
 
   static const _lastSyncKey = 'pi_sync_last_sync_at';
+  static const int _imageHydrationConcurrency = 4;
+  static const int _imageImportConcurrency = 4;
 
   Future<DateTime?> _getLastSyncAt() async {
     final prefs = await SharedPreferences.getInstance();
@@ -65,7 +67,12 @@ class SyncService {
     try {
       final last = await _getLastSyncAt();
       if (last != null) {
-        scans.addAll(await PiApi.instance.getScansSince(PiApi.defaultBaseUrl, last.toIso8601String()));
+        scans.addAll(
+          await PiApi.instance.getScansSince(
+            PiApi.defaultBaseUrl,
+            last.toIso8601String(),
+          ),
+        );
       } else {
         scans.addAll(await PiApi.instance.getScansAll(PiApi.defaultBaseUrl));
       }
@@ -76,7 +83,9 @@ class SyncService {
   }
 
   Future<bool> syncFromPi(PiQrData data) async {
-    final baseUrl = data.baseUrl.isNotEmpty ? data.baseUrl : PiApi.hotspotBaseUrl;
+    final baseUrl = data.baseUrl.isNotEmpty
+        ? data.baseUrl
+        : PiApi.hotspotBaseUrl;
     final altUrl = data.altScanUrl?.isNotEmpty == true ? data.altScanUrl : null;
     final endpoints = data.endpoints;
 
@@ -94,10 +103,16 @@ class SyncService {
       final connected = await HotspotService.instance.connectToPi(data);
       if (connected) {
         final ssid = await HotspotService.instance.getCurrentSsid();
-        if (ssid == null || ssid.isEmpty || ssid.toLowerCase().contains('unknown')) {
-          debugPrint('Unable to read SSID after hotspot connect; location services may be required.');
+        if (ssid == null ||
+            ssid.isEmpty ||
+            ssid.toLowerCase().contains('unknown')) {
+          debugPrint(
+            'Unable to read SSID after hotspot connect; location services may be required.',
+          );
         } else if (ssid != data.ssid) {
-          debugPrint('SSID mismatch hint: current="$ssid" expected="${data.ssid}". Proceeding to verify Pi reachability.');
+          debugPrint(
+            'SSID mismatch hint: current="$ssid" expected="${data.ssid}". Proceeding to verify Pi reachability.',
+          );
         }
 
         progressNotifier.value = const SyncProgress(
@@ -114,11 +129,18 @@ class SyncService {
         if (PiApi.hotspotBaseUrl != baseUrl) {
           candidates.add(PiApi.hotspotBaseUrl);
         }
-        if (altUrl != null && altUrl.isNotEmpty && !candidates.contains(altUrl)) {
+        if (altUrl != null &&
+            altUrl.isNotEmpty &&
+            !candidates.contains(altUrl)) {
           candidates.add(altUrl);
         }
 
-        accessUrl = await HotspotService.instance.findFirstReadyPi(candidates, statusPath: endpoints.statusPath) ?? '';
+        accessUrl =
+            await HotspotService.instance.findFirstReadyPi(
+              candidates,
+              statusPath: endpoints.statusPath,
+            ) ??
+            '';
         piAvailable = accessUrl.isNotEmpty;
 
         if (piAvailable) {
@@ -137,7 +159,9 @@ class SyncService {
     if (!piAvailable) {
       progressNotifier.value = null;
       // The Pi should act as the hotspot; do not fall back to a LAN IP here.
-      throw Exception('Unable to reach Pi hotspot. Please connect to the Pi network via QR scan.');
+      throw Exception(
+        'Unable to reach Pi hotspot. Please connect to the Pi network via QR scan.',
+      );
     }
 
     progressNotifier.value = const SyncProgress(
@@ -149,20 +173,33 @@ class SyncService {
 
     final diagnostics = SyncDiagnostics();
     diagnosticsNotifier.value = diagnostics;
+    bool usedDbImportFallback = false;
 
     List<ScanItem> scans;
     bool fetchSuccess = false;
     try {
       final lastSyncAt = await _getLastSyncAt();
       if (lastSyncAt != null) {
-        scans = await PiApi.instance.getScansSince(accessUrl, lastSyncAt.toIso8601String(), endpoints: endpoints);
+        scans = await PiApi.instance.getScansSince(
+          accessUrl,
+          lastSyncAt.toIso8601String(),
+          endpoints: endpoints,
+        );
         // If incremental fetch returns suspiciously empty, force full sync for Kivy parity
         if (scans.isEmpty) {
-          debugPrint('Incremental sync returned no scans; falling back to full sync.');
-          scans = await PiApi.instance.getScansAll(accessUrl, endpoints: endpoints);
+          debugPrint(
+            'Incremental sync returned no scans; falling back to full sync.',
+          );
+          scans = await PiApi.instance.getScansAll(
+            accessUrl,
+            endpoints: endpoints,
+          );
         }
       } else {
-        scans = await PiApi.instance.getScansAll(accessUrl, endpoints: endpoints);
+        scans = await PiApi.instance.getScansAll(
+          accessUrl,
+          endpoints: endpoints,
+        );
       }
 
       diagnostics.scansFetched = scans.length;
@@ -171,10 +208,16 @@ class SyncService {
     } catch (e) {
       progressNotifier.value = null; // Clear progress on error
       // If this Pi setup prefers DB download/import over scan endpoints, fall back when provided.
-      if (endpoints.dbDownloadPath != null && endpoints.dbDownloadPath!.isNotEmpty) {
-        final downloadedDbPath = await PiApi.instance.downloadDatabase(accessUrl, endpoints: endpoints);
+      if (endpoints.dbDownloadPath != null &&
+          endpoints.dbDownloadPath!.isNotEmpty) {
+        final downloadedDbPath = await PiApi.instance.downloadDatabase(
+          accessUrl,
+          endpoints: endpoints,
+        );
         await LocalDb.instance.replaceDatabaseFromFile(downloadedDbPath);
         await _normalizeImportedImagePaths();
+        await _hydrateImportedScanImages(accessUrl, endpoints, diagnostics);
+        usedDbImportFallback = true;
         fetchSuccess = true;
       } else {
         rethrow;
@@ -183,7 +226,9 @@ class SyncService {
 
     // Optional: download and extract scan bundle for the scanned id.
     final scanId = data.scanId;
-    if (scanId != null && scanId.isNotEmpty && endpoints.scanBundlePathTemplate != null) {
+    if (scanId != null &&
+        scanId.isNotEmpty &&
+        endpoints.scanBundlePathTemplate != null) {
       progressNotifier.value = const SyncProgress(
         stage: 'Bundle',
         completedUnits: 0,
@@ -192,8 +237,15 @@ class SyncService {
       );
 
       try {
-        final bundlePath = await PiApi.instance.downloadScanBundle(accessUrl, endpoints: endpoints, scanId: scanId);
-        final extractedDir = await PiBundleService.instance.extractZipBundle(zipPath: bundlePath, scanId: scanId);
+        final bundlePath = await PiApi.instance.downloadScanBundle(
+          accessUrl,
+          endpoints: endpoints,
+          scanId: scanId,
+        );
+        final extractedDir = await PiBundleService.instance.extractZipBundle(
+          zipPath: bundlePath,
+          scanId: scanId,
+        );
 
         final id = int.tryParse(scanId);
         if (id != null) {
@@ -215,6 +267,18 @@ class SyncService {
                 severityValue: existing.severityValue,
                 photoId: existing.photoId,
                 scanDir: extractedDir,
+                treeId: existing.treeId,
+                treeName: existing.treeName,
+                treeLocation: existing.treeLocation,
+                treeVariety: existing.treeVariety,
+                diseaseId: existing.diseaseId,
+                diseaseName: existing.diseaseName,
+                diseaseDescription: existing.diseaseDescription,
+                diseaseSymptoms: existing.diseaseSymptoms,
+                diseasePrevention: existing.diseasePrevention,
+                severityLevelId: existing.severityLevelId,
+                severityLevelName: existing.severityLevelName,
+                severityLevelDescription: existing.severityLevelDescription,
               ),
             );
           }
@@ -224,8 +288,10 @@ class SyncService {
       }
     }
 
-    // Reconcile gallery from imported scans
-    await reconcileGalleryFromScans();
+    // Reconcile only when data changed. This avoids heavy no-op work.
+    if (usedDbImportFallback || diagnostics.scansFetched > 0) {
+      await reconcileGalleryFromScans();
+    }
 
     // Gate lastSync update on successful fetch+processing completion
     if (fetchSuccess) {
@@ -254,34 +320,37 @@ class SyncService {
       final checksum = row['checksum'] as String?;
       final source = row['source'] as String?;
       final updatedAt = row['updated_at'] as String?;
-      final confidence = row['confidence'] as double?;
-      final severityValue = row['severity_value'] as double?;
+      final confidence = (row['confidence'] as num?)?.toDouble();
+      final severityValue = (row['severity_value'] as num?)?.toDouble();
       final photoId = row['photo_id'] as int?;
       final scanDir = row['scan_dir'] as String?;
-      
+
       if (!await File(imagePath).exists()) continue;
 
       final fileName = basename(imagePath);
       final permanentPath = join(photosDir.path, fileName);
       String updatedImagePath = imagePath;
-      try {
-        await File(imagePath).rename(permanentPath);
-        updatedImagePath = permanentPath;
-      } catch (e) {
-        // Keep original path if rename fails
+      if (imagePath != permanentPath) {
+        try {
+          await File(imagePath).rename(permanentPath);
+          updatedImagePath = permanentPath;
+        } catch (e) {
+          // Keep original path if rename fails
+        }
       }
       await LocalDb.instance.updateScanImagePath(scanId, updatedImagePath);
 
       final photoName = disease.isNotEmpty ? disease : 'Scan $scanId';
       final photoTimestamp = timestamp;
 
-      int? existingPhotoId = await LocalDb.instance.getPhotoIdByNameTimestamp(photoName, photoTimestamp);
+      int? existingPhotoId = await LocalDb.instance.getPhotoIdByNameTimestamp(
+        photoName,
+        photoTimestamp,
+      );
       if (existingPhotoId == null) {
-        final bytes = await File(updatedImagePath).readAsBytes();
-        final photoData = base64Encode(bytes);
         existingPhotoId = await LocalDb.instance.insertPhoto(
           name: photoName,
-          data: photoData,
+          data: '',
           path: updatedImagePath,
           timestamp: photoTimestamp,
           title: title,
@@ -302,7 +371,9 @@ class SyncService {
 
   Future<void> _normalizeImportedImagePaths() async {
     final docs = await getApplicationDocumentsDirectory();
-    final importable = await LocalDb.instance.getImportableScanImages();
+    final photosDir = Directory(join(docs.path, 'photos'));
+    await photosDir.create(recursive: true);
+    final importable = await LocalDb.instance.getScanImageCandidates();
 
     for (final row in importable) {
       final scanId = row['id'] as int;
@@ -316,13 +387,110 @@ class SyncService {
       if (fileName.isEmpty) continue;
 
       final candidate = File('${docs.path}/$fileName');
-      if (await candidate.exists()) {
+      final candidateInPhotos = File(join(photosDir.path, fileName));
+      if (await candidateInPhotos.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, candidateInPhotos.path);
+      } else if (await candidate.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, candidate.path);
       }
     }
   }
 
-  Future<void> _processScans(List<ScanItem> scans, {String? baseUrl, PiQrEndpoints? endpoints}) async {
+  Future<void> _hydrateImportedScanImages(
+    String baseUrl,
+    PiQrEndpoints endpoints,
+    SyncDiagnostics diagnostics,
+  ) async {
+    final docs = await getApplicationDocumentsDirectory();
+    final photosDir = Directory(join(docs.path, 'photos'));
+    await photosDir.create(recursive: true);
+
+    final importable = await LocalDb.instance.getScanImageCandidates();
+
+    final pending = <Map<String, dynamic>>[];
+    for (final row in importable) {
+      final scanId = row['id'] as int;
+      final imagePath = row['image_path'] as String? ?? '';
+      if (imagePath.isEmpty) continue;
+
+      final existing = File(imagePath);
+      if (await existing.exists()) continue;
+
+      final fileName = basename(imagePath);
+      if (fileName.isEmpty) continue;
+
+      final inPhotos = File(join(photosDir.path, fileName));
+      if (await inPhotos.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, inPhotos.path);
+        continue;
+      }
+
+      final inDocs = File(join(docs.path, fileName));
+      if (await inDocs.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, inDocs.path);
+        continue;
+      }
+
+      pending.add({'scanId': scanId, 'fileName': fileName});
+    }
+
+    if (pending.isEmpty) return;
+
+    progressNotifier.value = SyncProgress(
+      stage: 'Hydrating',
+      completedUnits: 0,
+      totalUnits: pending.length,
+      message: 'Downloading ${pending.length} missing imported images…',
+    );
+
+    int completed = 0;
+    for (int i = 0; i < pending.length; i += _imageHydrationConcurrency) {
+      final chunk = pending.sublist(
+        i,
+        (i + _imageHydrationConcurrency) > pending.length
+            ? pending.length
+            : (i + _imageHydrationConcurrency),
+      );
+
+      await Future.wait(
+        chunk.map((item) async {
+          final scanId = item['scanId'] as int;
+          final fileName = item['fileName'] as String;
+          diagnostics.imagesAttempted++;
+          try {
+            final localPath = await PiApi.instance.downloadFile(
+              baseUrl: baseUrl,
+              path: endpoints.resolveImagePath(fileName),
+              fileName: fileName,
+              timeout: const Duration(seconds: 30),
+            );
+            diagnostics.imagesDownloaded++;
+            await LocalDb.instance.updateScanImagePath(scanId, localPath);
+          } catch (e) {
+            diagnostics.failures++;
+            diagnostics.failureMessages.add(
+              'Failed to hydrate imported image for scan $scanId: $e',
+            );
+            debugPrint('Failed to download image for scan $scanId: $e');
+          }
+        }),
+      );
+
+      completed += chunk.length;
+      progressNotifier.value = SyncProgress(
+        stage: 'Hydrating',
+        completedUnits: completed,
+        totalUnits: pending.length,
+        message: 'Downloaded $completed of ${pending.length} imported images…',
+      );
+    }
+  }
+
+  Future<void> _processScans(
+    List<ScanItem> scans, {
+    String? baseUrl,
+    PiQrEndpoints? endpoints,
+  }) async {
     final diagnostics = diagnosticsNotifier.value ?? SyncDiagnostics();
     diagnostics.scansFetched = scans.length;
     final scanCount = scans.length;
@@ -347,44 +515,55 @@ class SyncService {
       message: 'Processed $scanCount scans…',
     );
 
-    // Then process images individually
-    for (final remote in scans) {
-      if (remote.imageUrl.isNotEmpty) {
-        diagnostics.imagesAttempted++;
-        try {
-          progressNotifier.value = SyncProgress(
-            stage: 'Downloading',
-            completedUnits: completedUnits,
-            totalUnits: totalUnits,
-            message: 'Downloading image for scan ${remote.id}…',
-          );
+    final docsDir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory(join(docsDir.path, 'photos'));
+    await photosDir.create(recursive: true);
 
-          final localPath = await PiApi.instance.downloadImage(
-            remote,
-            baseUrl ?? PiApi.defaultBaseUrl,
-            endpoints: endpoints,
-          );
-          diagnostics.imagesDownloaded++;
+    final scansWithImages = scans.where((s) => s.imageUrl.isNotEmpty).toList();
+    int processedImageUnits = 0;
 
-          final docsDir = await getApplicationDocumentsDirectory();
-          final photosDir = Directory(join(docsDir.path, 'photos'));
-          await photosDir.create(recursive: true);
-          final fileName = basename(localPath);
-          final permanentPath = join(photosDir.path, fileName);
-          String updatedImagePath = localPath;
+    Future<void> processImage(ScanItem remote) async {
+      diagnostics.imagesAttempted++;
+      try {
+        final localPath = await PiApi.instance.downloadImage(
+          remote,
+          baseUrl ?? PiApi.defaultBaseUrl,
+          endpoints: endpoints,
+        );
+        diagnostics.imagesDownloaded++;
+
+        final fileName = basename(localPath);
+        final permanentPath = join(photosDir.path, fileName);
+        String updatedImagePath = localPath;
+        if (localPath != permanentPath) {
           try {
             await File(localPath).rename(permanentPath);
             updatedImagePath = permanentPath;
-          } catch (e) {
-            // Keep original path if rename fails
+          } catch (_) {
+            // Keep original path if rename fails.
           }
+        }
+        await LocalDb.instance.updateScanImagePath(remote.id, updatedImagePath);
 
-          final updated = ScanItem(
-            id: remote.id,
+        final photoName = remote.title.isNotEmpty
+            ? remote.title
+            : 'Scan ${remote.id}';
+        final photoTimestamp = remote.timestamp.isNotEmpty
+            ? remote.timestamp
+            : DateTime.now().toIso8601String();
+
+        int? photoId = await LocalDb.instance.getPhotoIdByNameTimestamp(
+          photoName,
+          photoTimestamp,
+        );
+        if (photoId == null) {
+          photoId = await LocalDb.instance.insertPhoto(
+            name: photoName,
+            data: '',
+            path: updatedImagePath,
+            timestamp: photoTimestamp,
             title: remote.title,
             description: remote.description,
-            timestamp: remote.timestamp,
-            imagePath: updatedImagePath,
             imageUrl: remote.imageUrl,
             checksum: remote.checksum,
             source: remote.source,
@@ -395,51 +574,49 @@ class SyncService {
             photoId: remote.photoId,
             scanDir: remote.scanDir,
           );
-          await LocalDb.instance.upsertScan(updated);
-
-          final photoName = remote.title.isNotEmpty ? remote.title : 'Scan ${remote.id}';
-          final photoTimestamp = remote.timestamp.isNotEmpty ? remote.timestamp : DateTime.now().toIso8601String();
-
-          int? photoId = await LocalDb.instance.getPhotoIdByNameTimestamp(photoName, photoTimestamp);
-          if (photoId == null) {
-            final bytes = await File(updatedImagePath).readAsBytes();
-            final photoData = base64Encode(bytes);
-            photoId = await LocalDb.instance.insertPhoto(
-              name: photoName,
-              data: photoData,
-              path: updatedImagePath,
-              timestamp: photoTimestamp,
-              title: remote.title,
-              description: remote.description,
-              imageUrl: remote.imageUrl,
-              checksum: remote.checksum,
-              source: remote.source,
-              updatedAt: remote.updatedAt,
-              disease: remote.disease,
-              confidence: remote.confidence,
-              severityValue: remote.severityValue,
-              photoId: remote.photoId,
-              scanDir: remote.scanDir,
-            );
-          }
-          diagnostics.photosInserted++;
-
-          if (photoId > 0) {
-            // Photo inserted into gallery DB, no need to update scan record
-          }
-        } catch (e) {
-          diagnostics.failures++;
-          diagnostics.failureMessages.add('Failed to process image for scan ${remote.id}: $e');
-          debugPrint('Image processing failed for scan ${remote.id}: $e');
         }
-        completedUnits++;
+        if (photoId > 0) {
+          diagnostics.photosInserted++;
+        }
+      } catch (e) {
+        diagnostics.failures++;
+        diagnostics.failureMessages.add(
+          'Failed to process image for scan ${remote.id}: $e',
+        );
+        debugPrint('Image processing failed for scan ${remote.id}: $e');
+      } finally {
+        processedImageUnits++;
+        completedUnits = scanCount + processedImageUnits;
         progressNotifier.value = SyncProgress(
           stage: 'Downloading',
           completedUnits: completedUnits,
           totalUnits: totalUnits,
-          message: 'Downloaded ${completedUnits - scanCount} of $imageCount images…',
+          message: 'Downloaded $processedImageUnits of $imageCount images…',
         );
       }
+    }
+
+    for (
+      int i = 0;
+      i < scansWithImages.length;
+      i += _imageImportConcurrency
+    ) {
+      final chunk = scansWithImages.sublist(
+        i,
+        (i + _imageImportConcurrency) > scansWithImages.length
+            ? scansWithImages.length
+            : (i + _imageImportConcurrency),
+      );
+
+      progressNotifier.value = SyncProgress(
+        stage: 'Downloading',
+        completedUnits: completedUnits,
+        totalUnits: totalUnits,
+        message:
+            'Downloading images ${i + 1}-${i + chunk.length} of $imageCount…',
+      );
+
+      await Future.wait(chunk.map(processImage));
     }
 
     String message = 'Sync complete.';

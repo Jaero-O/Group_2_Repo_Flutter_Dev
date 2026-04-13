@@ -17,13 +17,15 @@ class ScanPage extends StatefulWidget {
 
 enum SortOption { dateNewest, dateOldest, severityHigh, severityLow }
 
-enum FilterOption { all, healthy, moderate, severe }
+enum FilterOption { all, healthy, earlyStage, advancedStage }
 
 class _ScanPageState extends State<ScanPage> {
   // State variables
   List<ScanItem> _scanHistory = [];
   List<ScanItem> _displayScanHistory = []; // The list shown to the user
   bool _isLoading = true;
+  bool _isLoadingHistory = false;
+  bool _hasPendingHistoryReload = false;
 
   // Sort and Filter state
   SortOption _currentSort = SortOption.dateNewest;
@@ -32,29 +34,121 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void initState() {
     super.initState();
-    _seedDummyDataIfEmpty();
-    SyncService.instance.lastSyncNotifier.addListener(_loadScanHistory);
+    _loadScanHistory();
+    SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
   }
 
   @override
   void dispose() {
-    SyncService.instance.lastSyncNotifier.removeListener(_loadScanHistory);
+    SyncService.instance.lastSyncNotifier.removeListener(_onSyncUpdated);
     super.dispose();
   }
 
+  void _onSyncUpdated() {
+    _loadScanHistory();
+  }
+
+  String _normalizeSeverityLabel(String raw) {
+    final value = raw.trim().toLowerCase();
+    if (value.isEmpty) return '';
+    if (value.contains('healthy')) return 'Healthy';
+    if (value.contains('advanced') ||
+        value.contains('severe') ||
+        value.contains('critical')) {
+      return 'Advanced Stage';
+    }
+    if (value.contains('early') ||
+        value.contains('moderate') ||
+        value.contains('mid')) {
+      return 'Early Stage';
+    }
+    return raw.trim();
+  }
+
+  String _statusKeyFor(ScanItem item) {
+    final status = _statusFor(item).trim().toLowerCase();
+    if (status.contains('healthy')) return 'healthy';
+    if (status.contains('advanced') ||
+        status.contains('severe') ||
+        status.contains('critical')) {
+      return 'advanced_stage';
+    }
+    if (status.contains('early') ||
+        status.contains('moderate') ||
+        status.contains('mid')) {
+      return 'early_stage';
+    }
+    return status.replaceAll(' ', '_');
+  }
+
   String _statusFor(ScanItem item) {
+    final level = _normalizeSeverityLabel(item.severityLevelName);
+    if (level.isNotEmpty) return level;
+    if (_displayDiseaseName(item).toLowerCase() == 'healthy') return 'Healthy';
+
     final v = item.severityValue;
-    if (v > 40.0) return 'Severe';
-    if (v > 5.0) return 'Moderate';
+    if (v > 40.0) return 'Advanced Stage';
+    if (v > 5.0) return 'Early Stage';
     return 'Healthy';
+  }
+
+  bool _isGenericDetectionLabel(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    return normalized == 'image detected' ||
+        normalized == 'imported dataset detected' ||
+        normalized == 'dataset detected';
+  }
+
+  String _formatDiseaseClass(String raw) {
+    final normalized = raw.trim().replaceAll(RegExp(r'[_-]+'), ' ');
+    if (normalized.isEmpty) return '';
+    final words = normalized.split(RegExp(r'\s+'));
+    return words
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .join(' ');
+  }
+
+  String _displayDiseaseName(ScanItem item) {
+    final canonical = item.diseaseName.trim();
+    if (canonical.isNotEmpty && !_isGenericDetectionLabel(canonical)) {
+      return canonical;
+    }
+
+    final formattedClass = _formatDiseaseClass(item.diseaseClass);
+    if (formattedClass.isNotEmpty && !_isGenericDetectionLabel(formattedClass)) {
+      return formattedClass;
+    }
+
+    final formattedFallback = _formatDiseaseClass(item.disease);
+    if (formattedFallback.isNotEmpty &&
+        !_isGenericDetectionLabel(formattedFallback)) {
+      return formattedFallback;
+    }
+
+    return 'Unknown Disease';
+  }
+
+  String _scanSubtitleFor(ScanItem item) {
+    final name = item.treeName.trim();
+    final location = item.treeLocation.trim();
+    if (name.isNotEmpty && location.isNotEmpty) {
+      return 'Scanned tree: $name ($location)';
+    }
+    if (name.isNotEmpty) return 'Scanned tree: $name';
+    if (location.isNotEmpty) return 'Scanned location: $location';
+    return 'No tree information from scan record.';
   }
 
   Color _primaryColorForStatus(String status) {
     switch (status.toLowerCase()) {
       case 'healthy':
         return const Color(0xFF4CAF50);
+      case 'early stage':
       case 'moderate':
         return const Color(0xFFF2DA00);
+      case 'advanced stage':
       case 'severe':
         return const Color(0xFFF44336);
       default:
@@ -62,8 +156,33 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
+  DateTime? _parseTimestamp(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final parsed =
+        DateTime.tryParse(trimmed) ??
+        DateTime.tryParse(trimmed.replaceFirst(' ', 'T'));
+    if (parsed != null) return parsed;
+
+    final m = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?',
+    ).firstMatch(trimmed);
+    if (m == null) return null;
+
+    final y = int.tryParse(m.group(1) ?? '');
+    final mo = int.tryParse(m.group(2) ?? '');
+    final d = int.tryParse(m.group(3) ?? '');
+    final h = int.tryParse(m.group(4) ?? '0');
+    final mi = int.tryParse(m.group(5) ?? '0');
+    final s = int.tryParse(m.group(6) ?? '0');
+
+    if (y == null || mo == null || d == null) return null;
+    return DateTime(y, mo, d, h ?? 0, mi ?? 0, s ?? 0);
+  }
+
   String _dateLabelFor(ScanItem item) {
-    final parsed = DateTime.tryParse(item.timestamp);
+    final parsed = _parseTimestamp(item.timestamp);
     if (parsed == null) return item.timestamp;
     final local = parsed.toLocal();
     final yyyy = local.year.toString().padLeft(4, '0');
@@ -72,62 +191,72 @@ class _ScanPageState extends State<ScanPage> {
     return '$yyyy-$mm-$dd';
   }
 
-  // Loads the scan history without inserting placeholder data.
-  Future<void> _seedDummyDataIfEmpty() async {
-    await _loadScanHistory();
+  List<ScanItem> _buildFilteredAndSorted(List<ScanItem> source) {
+    final filteredList = List<ScanItem>.from(source);
+
+    if (_currentFilter != FilterOption.all) {
+      final String filterStatus = _currentFilter == FilterOption.healthy
+          ? 'healthy'
+          : _currentFilter == FilterOption.earlyStage
+          ? 'early_stage'
+          : 'advanced_stage';
+      filteredList.retainWhere((record) => _statusKeyFor(record) == filterStatus);
+    }
+
+    filteredList.sort((a, b) {
+      switch (_currentSort) {
+        case SortOption.dateNewest:
+          final at = _parseTimestamp(a.timestamp);
+          final bt = _parseTimestamp(b.timestamp);
+          if (at != null && bt != null) return bt.compareTo(at);
+          return b.id.compareTo(a.id);
+        case SortOption.dateOldest:
+          final at = _parseTimestamp(a.timestamp);
+          final bt = _parseTimestamp(b.timestamp);
+          if (at != null && bt != null) return at.compareTo(bt);
+          return a.id.compareTo(b.id);
+        case SortOption.severityHigh:
+          return b.severityValue.compareTo(a.severityValue);
+        case SortOption.severityLow:
+          return a.severityValue.compareTo(b.severityValue);
+      }
+    });
+
+    return filteredList;
   }
 
   // Loads all scan records from the database.
   Future<void> _loadScanHistory() async {
-    final List<ScanItem> history = await LocalDb.instance.getAllScans();
+    if (_isLoadingHistory) {
+      _hasPendingHistoryReload = true;
+      return;
+    }
 
-    if (mounted) {
-      setState(() {
-        _scanHistory = history;
-        _isLoading = false;
-        _applySortAndFilter(); // Apply initial sort/filter after loading
-      });
+    _isLoadingHistory = true;
+
+    try {
+      final List<ScanItem> history = await LocalDb.instance.getAllScans();
+
+      if (mounted) {
+        setState(() {
+          _scanHistory = history;
+          _displayScanHistory = _buildFilteredAndSorted(history);
+          _isLoading = false;
+        });
+      }
+    } finally {
+      _isLoadingHistory = false;
+      if (_hasPendingHistoryReload) {
+        _hasPendingHistoryReload = false;
+        _loadScanHistory();
+      }
     }
   }
 
   // Filtering and Sorting Logic
 
   void _applySortAndFilter() {
-    // Start with the full history list
-    List<ScanItem> filteredList = List.from(_scanHistory);
-
-    // Apply Filtering
-    if (_currentFilter != FilterOption.all) {
-      final String filterStatus = _currentFilter.toString().split('.').last;
-      filteredList = filteredList
-          .where((record) => _statusFor(record).toLowerCase() == filterStatus)
-          .toList();
-    }
-
-    // Apply Sorting
-    filteredList.sort((a, b) {
-      switch (_currentSort) {
-        case SortOption.dateNewest:
-          // To sort Newest First (Descending by ID): b.id > a.id
-          return a.id.compareTo(b.id);
-
-        case SortOption.dateOldest:
-          // To sort Oldest First (Ascending by ID): a.id < b.id
-          return b.id.compareTo(a.id);
-
-        case SortOption.severityHigh:
-          // High to Low: b.value > a.value
-          return b.severityValue.compareTo(a.severityValue);
-
-        case SortOption.severityLow:
-          // Low to High: a.value > b.value
-          return a.severityValue.compareTo(b.severityValue);
-      }
-    });
-
-    setState(() {
-      _displayScanHistory = filteredList;
-    });
+    _displayScanHistory = _buildFilteredAndSorted(_scanHistory);
   }
 
   // UI Methods for Sort/Filter Selection
@@ -173,8 +302,8 @@ class _ScanPageState extends State<ScanPage> {
           options: {
             FilterOption.all: 'All Scans',
             FilterOption.healthy: 'Healthy',
-            FilterOption.moderate: 'Moderate',
-            FilterOption.severe: 'Severe',
+            FilterOption.earlyStage: 'Early Stage',
+            FilterOption.advancedStage: 'Advanced Stage',
           },
           onSelect: (option) {
             setState(() {
@@ -186,7 +315,7 @@ class _ScanPageState extends State<ScanPage> {
         );
       },
     );
-  }
+    }
 
   Widget _buildOptionsSheet<T extends Enum>({
     required String title,
@@ -297,7 +426,9 @@ class _ScanPageState extends State<ScanPage> {
                     const SizedBox(height: 6),
                     // Status text moved to center of scan list page for better visibility
                     const SizedBox(height: 0),
-                    const SizedBox(height: 0),  // status line hidden for clean UI
+                    const SizedBox(
+                      height: 0,
+                    ), // status line hidden for clean UI
                   ],
                 ),
               ),
@@ -330,36 +461,38 @@ class _ScanPageState extends State<ScanPage> {
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : _displayScanHistory.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                      Text(
-                                        'No scans yet.',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w400,
-                                          color: Colors.grey,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 40),
-                                        child: Text(
-                                          'Scan QR code to import images automatically.',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w400,
-                                            color: Colors.grey,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 90),
-                                  ],
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'No scans yet.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.grey,
+                                  ),
+                                  textAlign: TextAlign.center,
                                 ),
-                              )
+                                const SizedBox(height: 8),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 40,
+                                  ),
+                                  child: Text(
+                                    'Scan QR code to import images automatically.',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                      color: Colors.grey,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                const SizedBox(height: 90),
+                              ],
+                            ),
+                          )
                         : ListView.separated(
                             itemCount: _displayScanHistory.length,
                             padding: EdgeInsets.fromLTRB(
@@ -374,14 +507,16 @@ class _ScanPageState extends State<ScanPage> {
                               final color = _primaryColorForStatus(status);
                               return _buildScanHistoryItem(
                                 context,
-                                severityValue: item.severityValue.toStringAsFixed(1),
+                                item: item,
+                                severityValue: item.severityValue
+                                    .toStringAsFixed(1),
                                 status: status,
                                 primaryColor: color,
-                                disease: item.disease.isNotEmpty ? item.disease : item.title,
+                                disease: _displayDiseaseName(item),
                                 date: _dateLabelFor(item),
-                                index: index,
                                 photoId: item.photoId,
                                 localImagePath: item.imagePath,
+                                subtitle: _scanSubtitleFor(item),
                               );
                             },
                             separatorBuilder: (context, index) {
@@ -427,7 +562,7 @@ class _ScanPageState extends State<ScanPage> {
                   _buildSummaryCard(
                     title: 'Infected',
                     value: infectedScans.toString(),
-                    diseaseName: 'Anthracnose',
+                    diseaseName: null,
                   ),
                 ],
               ),
@@ -492,10 +627,10 @@ class _ScanPageState extends State<ScanPage> {
         return 'Filter: All';
       case FilterOption.healthy:
         return 'Filter: Healthy';
-      case FilterOption.moderate:
-        return 'Filter: Moderate';
-      case FilterOption.severe:
-        return 'Filter: Severe';
+      case FilterOption.earlyStage:
+        return 'Filter: Early';
+      case FilterOption.advancedStage:
+        return 'Filter: Advanced';
     }
   }
 
@@ -559,14 +694,15 @@ class _ScanPageState extends State<ScanPage> {
 
   Widget _buildScanHistoryItem(
     BuildContext context, {
+    required ScanItem item,
     required String severityValue,
     required String status,
     required Color primaryColor,
     required String disease,
     required String date,
-    required int index,
     int? photoId,
     String? localImagePath,
+    required String subtitle,
   }) {
     return GestureDetector(
       onTap: () {
@@ -581,6 +717,11 @@ class _ScanPageState extends State<ScanPage> {
               severityColor: primaryColor,
               photoId: photoId,
               localImagePath: localImagePath,
+              statusLabel: status,
+              treeName: item.treeName,
+              treeLocation: item.treeLocation,
+              diseaseDescription: item.diseaseDescription,
+              diseasePrevention: item.diseasePrevention,
             ),
           ),
         );
@@ -666,6 +807,8 @@ class _ScanPageState extends State<ScanPage> {
                   Text(
                     disease.toLowerCase() == 'healthy'
                         ? 'No Disease Detected'
+                        : disease.toLowerCase() == 'unknown disease'
+                        ? 'Disease Not Available'
                         : '$disease Detected',
                     style: GoogleFonts.inter(
                       fontSize: 14,
@@ -675,7 +818,7 @@ class _ScanPageState extends State<ScanPage> {
                   const SizedBox(height: 4),
 
                   Text(
-                    'This leaf scan was performed on a young mango tree located in Zone B, Section 3.',
+                    subtitle,
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: Colors.black54,

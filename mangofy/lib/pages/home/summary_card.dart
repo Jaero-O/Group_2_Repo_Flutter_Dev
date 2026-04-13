@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../model/scan_summary_model.dart';
 
 class SummaryCard extends StatelessWidget {
-  final ScanSummary summary; 
+  final ScanSummary summary;
 
   // Update constructor to require the summary data
   const SummaryCard({super.key, required this.summary});
@@ -11,14 +11,13 @@ class SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Calculate diseased leaves count
-    final int diseasedLeaves = summary.moderateCount + summary.severeCount;
+    final int diseasedLeaves =
+        summary.earlyStageCount + summary.advancedStageCount;
 
     return Card(
       // Card elevation and rounded corners
       elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         // Apply gradient background and rounded corners
         decoration: BoxDecoration(
@@ -51,9 +50,9 @@ class SummaryCard extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Total leaves scanned 
+                      // Total leaves scanned
                       Text(
-                        summary.totalScans.toString(), 
+                        summary.totalScans.toString(),
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -71,9 +70,9 @@ class SummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // Healthy leaves 
+                      // Healthy leaves
                       Text(
-                        summary.healthyCount.toString(), 
+                        summary.healthyCount.toString(),
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -91,9 +90,9 @@ class SummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // Diseased leaves 
+                      // Diseased leaves
                       Text(
-                        diseasedLeaves.toString(), 
+                        diseasedLeaves.toString(),
                         style: GoogleFonts.inter(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,

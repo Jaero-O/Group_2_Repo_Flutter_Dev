@@ -9,6 +9,7 @@ class ScanItem {
   final String source;
   final String updatedAt;
   final String disease;
+  final String diseaseClass;
   final double confidence;
   final double severityValue;
   final int? photoId;
@@ -38,6 +39,7 @@ class ScanItem {
     required this.source,
     required this.updatedAt,
     required this.disease,
+    this.diseaseClass = '',
     required this.confidence,
     required this.severityValue,
     this.photoId,
@@ -75,7 +77,10 @@ class ScanItem {
     // - RasPi payload: {timestamp,classification:{class,confidence},reduced_image,scan_dir,database_id}
 
     final classification = json['classification'];
-    final bool isRasPiPayload = classification is Map<String, dynamic> || json.containsKey('reduced_image') || json.containsKey('scan_dir');
+    final bool isRasPiPayload =
+        classification is Map<String, dynamic> ||
+        json.containsKey('reduced_image') ||
+        json.containsKey('scan_dir');
 
     final String timestamp = json['timestamp']?.toString() ?? '';
     final String scanDir = json['scan_dir']?.toString() ?? '';
@@ -106,14 +111,31 @@ class ScanItem {
     }
 
     final String disease = isRasPiPayload
-        ? ((classification is Map<String, dynamic>) ? classification['class']?.toString() : null) ?? ''
-        : (json['disease']?.toString() ?? '');
+        ? ((classification is Map<String, dynamic>)
+                  ? classification['class']?.toString()
+                  : null) ??
+              json['disease_class']?.toString() ??
+              json['disease']?.toString() ??
+              ''
+        : (json['disease_class']?.toString() ??
+              json['disease']?.toString() ??
+              '');
+
+    final String diseaseClass =
+      json['disease_class']?.toString() ??
+      ((classification is Map<String, dynamic>)
+        ? classification['class']?.toString() ?? ''
+        : '');
 
     final double confidence = isRasPiPayload
-        ? ((classification is Map<String, dynamic>) ? _numToDouble(classification['confidence']) : 0.0)
-        : _numToDouble(json['confidence']);
+        ? ((classification is Map<String, dynamic>)
+              ? _numToDouble(classification['confidence'])
+              : 0.0)
+        : _numToDouble(json['confidence'] ?? json['confidence_score']);
 
-    final double severityValue = json.containsKey('severity_value')
+    final double severityValue = json.containsKey('severity_percentage')
+        ? _numToDouble(json['severity_percentage'])
+        : json.containsKey('severity_value')
         ? _numToDouble(json['severity_value'])
         : (disease.toLowerCase() == 'healthy' ? 0.0 : (confidence * 100.0));
 
@@ -125,7 +147,10 @@ class ScanItem {
         ? json['database_id'] as int
         : int.tryParse(json['database_id']?.toString() ?? '');
 
-    final int id = databaseId ?? int.tryParse(json['id']?.toString() ?? '') ?? _deriveIdFromScanDir(scanDir);
+    final int id =
+        databaseId ??
+        int.tryParse(json['id']?.toString() ?? '') ??
+        _deriveIdFromScanDir(scanDir);
 
     final String title = (json['title']?.toString().isNotEmpty == true)
         ? json['title'].toString()
@@ -133,24 +158,65 @@ class ScanItem {
 
     // Parse tree data
     final tree = json['tree'];
-    final int? treeId = tree is Map<String, dynamic> ? (tree['id'] is int ? tree['id'] as int : int.tryParse(tree['id']?.toString() ?? '')) : null;
-    final String treeName = tree is Map<String, dynamic> ? tree['name']?.toString() ?? '' : '';
-    final String treeLocation = tree is Map<String, dynamic> ? tree['location']?.toString() ?? '' : '';
-    final String treeVariety = tree is Map<String, dynamic> ? tree['variety']?.toString() ?? '' : '';
+    final int? treeId = tree is Map<String, dynamic>
+        ? (tree['id'] is int
+              ? tree['id'] as int
+              : int.tryParse(tree['id']?.toString() ?? ''))
+        : null;
+    final String treeName = tree is Map<String, dynamic>
+        ? tree['name']?.toString() ?? ''
+        : '';
+    final String treeLocation = tree is Map<String, dynamic>
+        ? tree['location']?.toString() ?? ''
+        : '';
+    final String treeVariety = tree is Map<String, dynamic>
+        ? tree['variety']?.toString() ?? ''
+        : '';
 
     // Parse disease data
     final diseaseObj = json['disease_obj'] ?? json['disease_data'];
-    final int? diseaseId = diseaseObj is Map<String, dynamic> ? (diseaseObj['id'] is int ? diseaseObj['id'] as int : int.tryParse(diseaseObj['id']?.toString() ?? '')) : null;
-    final String diseaseName = diseaseObj is Map<String, dynamic> ? diseaseObj['name']?.toString() ?? disease : disease;
-    final String diseaseDescription = diseaseObj is Map<String, dynamic> ? diseaseObj['description']?.toString() ?? '' : '';
-    final String diseaseSymptoms = diseaseObj is Map<String, dynamic> ? diseaseObj['symptoms']?.toString() ?? '' : '';
-    final String diseasePrevention = diseaseObj is Map<String, dynamic> ? diseaseObj['prevention']?.toString() ?? '' : '';
+    final int? diseaseId = diseaseObj is Map<String, dynamic>
+        ? (diseaseObj['id'] is int
+              ? diseaseObj['id'] as int
+              : int.tryParse(diseaseObj['id']?.toString() ?? ''))
+        : null;
+    final String diseaseName = diseaseObj is Map<String, dynamic>
+        ? diseaseObj['name']?.toString() ?? disease
+        : (json['disease_name']?.toString() ?? disease);
+    final String diseaseDescription = diseaseObj is Map<String, dynamic>
+        ? diseaseObj['description']?.toString() ?? ''
+        : '';
+    final String diseaseSymptoms = diseaseObj is Map<String, dynamic>
+        ? diseaseObj['symptoms']?.toString() ?? ''
+        : '';
+    final String diseasePrevention = diseaseObj is Map<String, dynamic>
+        ? diseaseObj['prevention']?.toString() ?? ''
+        : '';
 
     // Parse severity level data
     final severityObj = json['severity_level'] ?? json['severity_data'];
-    final int? severityLevelId = severityObj is Map<String, dynamic> ? (severityObj['id'] is int ? severityObj['id'] as int : int.tryParse(severityObj['id']?.toString() ?? '')) : null;
-    final String severityLevelName = severityObj is Map<String, dynamic> ? severityObj['name']?.toString() ?? '' : '';
-    final String severityLevelDescription = severityObj is Map<String, dynamic> ? severityObj['description']?.toString() ?? '' : '';
+    final int? severityLevelId = severityObj is Map<String, dynamic>
+        ? (severityObj['id'] is int
+              ? severityObj['id'] as int
+              : int.tryParse(severityObj['id']?.toString() ?? ''))
+        : int.tryParse(json['severity_level_id']?.toString() ?? '');
+
+    String severityLevelName = '';
+    String severityLevelDescription = '';
+    if (severityObj is Map<String, dynamic>) {
+      severityLevelName = severityObj['name']?.toString() ?? '';
+      severityLevelDescription = severityObj['description']?.toString() ?? '';
+    } else if (severityObj != null) {
+      severityLevelName = severityObj.toString();
+    }
+
+    if (severityLevelName.isEmpty) {
+      severityLevelName =
+          json['severity_level_name']?.toString() ??
+          json['severity_classification']?.toString() ??
+          json['severity_label']?.toString() ??
+          '';
+    }
 
     return ScanItem(
       id: id,
@@ -160,10 +226,14 @@ class ScanItem {
       imagePath: json['image_path']?.toString() ?? '',
       // For RasPi payload, use reduced_image so downloadImage() can extract filename.
       imageUrl: imageUrl,
-      checksum: json['metadata_hash']?.toString() ?? json['checksum']?.toString() ?? '',
+      checksum:
+          json['metadata_hash']?.toString() ??
+          json['checksum']?.toString() ??
+          '',
       source: json['source']?.toString() ?? 'pi',
       updatedAt: json['updated_at']?.toString() ?? '',
       disease: disease,
+      diseaseClass: diseaseClass,
       confidence: confidence,
       severityValue: severityValue,
       photoId: photoId,
@@ -184,31 +254,32 @@ class ScanItem {
   }
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'title': title,
-        'description': description,
-        'timestamp': timestamp,
-        'image_path': imagePath,
-        'image_url': imageUrl,
-        'checksum': checksum,
-        'source': source,
-        'updated_at': updatedAt,
-      'disease': disease,
-      'confidence': confidence,
-      'severity_value': severityValue,
-      'photo_id': photoId,
-      'scan_dir': scanDir,
-      'tree_id': treeId,
-      'tree_name': treeName,
-      'tree_location': treeLocation,
-      'tree_variety': treeVariety,
-      'disease_id': diseaseId,
-      'disease_name': diseaseName,
-      'disease_description': diseaseDescription,
-      'disease_symptoms': diseaseSymptoms,
-      'disease_prevention': diseasePrevention,
-      'severity_level_id': severityLevelId,
-      'severity_level_name': severityLevelName,
-      'severity_level_description': severityLevelDescription,
-      };
+    'id': id,
+    'title': title,
+    'description': description,
+    'timestamp': timestamp,
+    'image_path': imagePath,
+    'image_url': imageUrl,
+    'checksum': checksum,
+    'source': source,
+    'updated_at': updatedAt,
+    'disease_class': diseaseClass,
+    'disease': disease,
+    'confidence': confidence,
+    'severity_value': severityValue,
+    'photo_id': photoId,
+    'scan_dir': scanDir,
+    'tree_id': treeId,
+    'tree_name': treeName,
+    'tree_location': treeLocation,
+    'tree_variety': treeVariety,
+    'disease_id': diseaseId,
+    'disease_name': diseaseName,
+    'disease_description': diseaseDescription,
+    'disease_symptoms': diseaseSymptoms,
+    'disease_prevention': diseasePrevention,
+    'severity_level_id': severityLevelId,
+    'severity_level_name': severityLevelName,
+    'severity_level_description': severityLevelDescription,
+  };
 }

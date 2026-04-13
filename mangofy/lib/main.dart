@@ -39,12 +39,7 @@ class _MyHomePageState extends State<MyHomePage> {
   int navIndex = 0;
   int pageIndex = 0;
 
-  final List<Widget> pages = const [
-    HomePage(),
-    ScanPage(),
-    GalleryPage(),
-    DatasetPage(),
-  ];
+  final List<bool> _isPageBuilt = [true, false, false, false];
 
   static const Color selectedColor = Color(0xFF007700);
 
@@ -56,17 +51,42 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _onDestinationSelected(int index) {
     if (index == 2) return; // Spacer slot
+    final int nextPageIndex = index > 2 ? index - 1 : index;
+
     setState(() {
       navIndex = index;
-      pageIndex = index > 2 ? index - 1 : index;
+      pageIndex = nextPageIndex;
+      _isPageBuilt[nextPageIndex] = true;
     });
+  }
+
+  Widget _buildPageAt(int index) {
+    if (!_isPageBuilt[index]) {
+      return const SizedBox.shrink();
+    }
+
+    switch (index) {
+      case 0:
+        return const HomePage();
+      case 1:
+        return const ScanPage();
+      case 2:
+        return const GalleryPage();
+      case 3:
+        return const DatasetPage();
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF555555),
-      body: pages[pageIndex],
+      body: IndexedStack(
+        index: pageIndex,
+        children: List<Widget>.generate(4, _buildPageAt),
+      ),
       bottomNavigationBar: Stack(
         alignment: Alignment.topCenter,
         clipBehavior: Clip.none, // Allows the button to overflow the top

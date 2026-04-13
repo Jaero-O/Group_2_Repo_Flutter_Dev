@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dataset_constants.dart';
 import 'dataset_dialogs.dart';
 import 'dataset_widgets.dart'; 
-import '../../services/database_service.dart'; 
+import '../../services/local_db.dart';
 import '../../services/sync_service.dart';
 import '../../model/dataset_folder_model.dart'; 
 
@@ -20,6 +20,7 @@ class _DatasetPageState extends State<DatasetPage> {
   // List of folders now uses the DatasetFolder model and is initially empty
   List<DatasetFolder> folders = [];
   bool isLoading = true; // Added loading state
+  bool _isLoadingFolders = false;
 
   // Stores a temporary folder name during creation - kept for state management
   String? pendingFolderName;
@@ -39,14 +40,21 @@ class _DatasetPageState extends State<DatasetPage> {
 
   // Method to fetch dataset folders from the database
   Future<void> _loadFolders() async {
-    if (!mounted) return;
+    if (!mounted || _isLoadingFolders) return;
 
-    final loadedFolders = await DatabaseService.instance.getAllDatasetFolders();
+    _isLoadingFolders = true;
 
-    setState(() {
-      folders = loadedFolders;
-      isLoading = false;
-    });
+    try {
+      final loadedFolders = await LocalDb.instance.getAllDatasetFolders();
+      if (!mounted) return;
+
+      setState(() {
+        folders = loadedFolders;
+        isLoading = false;
+      });
+    } finally {
+      _isLoadingFolders = false;
+    }
   }
 
   // Handler for folder rename or delete actions
@@ -64,7 +72,7 @@ class _DatasetPageState extends State<DatasetPage> {
       );
 
       if (newName != null && newName.isNotEmpty && newName != folderName) {
-        await DatabaseService.instance.updateDatasetFolderName(
+        await LocalDb.instance.updateDatasetFolderName(
           folderName,
           newName,
         );
@@ -81,7 +89,7 @@ class _DatasetPageState extends State<DatasetPage> {
       );
 
       if (confirmDelete) {
-        await DatabaseService.instance.deleteDatasetFolder(folderName);
+        await LocalDb.instance.deleteDatasetFolder(folderName);
         _loadFolders(); // Reload to update UI
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Folder "$folderName" deleted.')),
@@ -234,7 +242,7 @@ class _DatasetPageState extends State<DatasetPage> {
             if (!mounted) return;
 
             // Save the new folder to the database
-            await DatabaseService.instance.insertDatasetFolder(
+            await LocalDb.instance.insertDatasetFolder(
               name: finalFolderName,
               imageIds: selectedImages,
               dateCreated: DateTime.now().toIso8601String(), // Store creation date

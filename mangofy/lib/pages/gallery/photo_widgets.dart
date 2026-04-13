@@ -10,20 +10,16 @@ class FullScreenPhotoView extends StatelessWidget {
   // Fallback for placeholder images
   final String? imagePath;
 
-  const FullScreenPhotoView({
-    super.key,
-    this.photo,
-    this.imagePath,
-  });
+  const FullScreenPhotoView({super.key, this.photo, this.imagePath});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       // Black background for a typical full-screen photo view
-      backgroundColor: Colors.black, 
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Photo Display Area 
+          // Photo Display Area
           Center(
             child: photo != null
                 ? PhotoGridItem(
@@ -48,15 +44,21 @@ class FullScreenPhotoView extends StatelessWidget {
                         const SizedBox(height: 16),
                         Text(
                           'Viewing: $imagePath',
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
                   ),
           ),
-          
+
           // Scan Information Panel (if available)
-          if (photo != null && (photo!.disease != null || photo!.title != null || photo!.description != null))
+          if (photo != null &&
+              (photo!.disease != null ||
+                  photo!.title != null ||
+                  photo!.description != null))
             Positioned(
               bottom: 0,
               left: 0,
@@ -88,7 +90,11 @@ class FullScreenPhotoView extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 4),
                         child: Row(
                           children: [
-                            const Icon(Icons.science, color: Colors.white70, size: 16),
+                            const Icon(
+                              Icons.science,
+                              color: Colors.white70,
+                              size: 16,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Disease: ${photo!.disease!}',
@@ -105,10 +111,36 @@ class FullScreenPhotoView extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 2),
                         child: Row(
                           children: [
-                            const Icon(Icons.verified, color: Colors.white70, size: 16),
+                            const Icon(
+                              Icons.verified,
+                              color: Colors.white70,
+                              size: 16,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Confidence: ${(photo!.confidence! * 100).round()}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (photo!.severityLabel != null &&
+                        photo!.severityLabel!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.local_offer_outlined,
+                              color: Colors.white70,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Classification: ${photo!.severityLabel!}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 14,
@@ -122,7 +154,11 @@ class FullScreenPhotoView extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 2),
                         child: Row(
                           children: [
-                            const Icon(Icons.warning, color: Colors.white70, size: 16),
+                            const Icon(
+                              Icons.warning,
+                              color: Colors.white70,
+                              size: 16,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Severity: ${photo!.severityValue!.toStringAsFixed(2)}',
@@ -134,7 +170,8 @@ class FullScreenPhotoView extends StatelessWidget {
                           ],
                         ),
                       ),
-                    if (photo!.description != null && photo!.description!.isNotEmpty)
+                    if (photo!.description != null &&
+                        photo!.description!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
@@ -162,10 +199,10 @@ class FullScreenPhotoView extends StatelessWidget {
                 ),
               ),
             ),
-          
+
           // Close Button
           Positioned(
-            top: 40, 
+            top: 40,
             right: 16,
             child: SafeArea(
               child: IconButton(
@@ -198,11 +235,7 @@ class PhotoGridItemPlaceholder extends StatelessWidget {
         color: Colors.grey[200],
         borderRadius: BorderRadius.circular(borderRadius),
       ),
-      child: Icon(
-        Icons.photo,
-        color: Colors.grey,
-        size: iconSize,
-      ),
+      child: Icon(Icons.photo, color: Colors.grey, size: iconSize),
     );
   }
 }
@@ -227,9 +260,9 @@ class LongPressableGridItemPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Wrapped with GestureDetector to handle taps and long presses
-    return GestureDetector( 
+    return GestureDetector(
       onTap: onTap,
-      onLongPress: onLongPress, 
+      onLongPress: onLongPress,
       child: child,
     );
   }
@@ -247,11 +280,11 @@ class PhotoGridPlaceholder extends StatelessWidget {
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
   // Property for tap handler
-  final ValueChanged<int>? onItemTap; 
+  final ValueChanged<int>? onItemTap;
   // Property for long press handler
-  final ValueChanged<int>? onItemLongPress; 
+  final ValueChanged<int>? onItemLongPress;
   // List of placeholder image IDs - used to pass context to the full screen view
-  final List<String> imageIds; 
+  final List<String> imageIds;
 
   const PhotoGridPlaceholder({
     super.key,
@@ -265,7 +298,7 @@ class PhotoGridPlaceholder extends StatelessWidget {
     this.physics,
     this.padding = EdgeInsets.zero,
     this.onItemTap,
-    this.onItemLongPress, 
+    this.onItemLongPress,
     this.imageIds = const [],
   });
 
@@ -286,7 +319,7 @@ class PhotoGridPlaceholder extends StatelessWidget {
           borderRadius: borderRadius,
           iconSize: iconSize,
           // Pass the tap handler to the grid item
-          onTap: () { 
+          onTap: () {
             if (onItemTap != null) {
               onItemTap!(index);
             }
@@ -318,9 +351,9 @@ class PhotoGrid extends StatelessWidget {
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
   // Property for tap handler
-  final ValueChanged<int>? onItemTap; 
+  final ValueChanged<int>? onItemTap;
   // Property for long press handler
-  final ValueChanged<int>? onItemLongPress; 
+  final ValueChanged<int>? onItemLongPress;
 
   const PhotoGrid({
     super.key,
@@ -333,7 +366,7 @@ class PhotoGrid extends StatelessWidget {
     this.physics,
     this.padding = EdgeInsets.zero,
     this.onItemTap,
-    this.onItemLongPress, 
+    this.onItemLongPress,
   });
 
   @override
@@ -353,7 +386,7 @@ class PhotoGrid extends StatelessWidget {
         return LongPressableGridItemPlaceholder(
           borderRadius: borderRadius,
           // Pass the tap handler to the grid item
-          onTap: () { 
+          onTap: () {
             if (onItemTap != null) {
               onItemTap!(index);
             }
@@ -364,10 +397,7 @@ class PhotoGrid extends StatelessWidget {
               onItemLongPress!(index);
             }
           },
-          child: PhotoGridItem(
-            photo: photo,
-            borderRadius: borderRadius,
-          ),
+          child: PhotoGridItem(photo: photo, borderRadius: borderRadius),
         );
       },
     );
@@ -379,31 +409,56 @@ class PhotoGridItem extends StatelessWidget {
   final dynamic photo; // Can be Photo or PhotoMetadata
   final double borderRadius;
 
-  const PhotoGridItem({
-    super.key,
-    required this.photo,
-    this.borderRadius = 8,
-  });
+  const PhotoGridItem({super.key, required this.photo, this.borderRadius = 8});
 
   @override
   Widget build(BuildContext context) {
     try {
       Widget imageWidget;
       final String? imagePath = photo.path;
+      final String? imageUrl = photo.imageUrl;
       final String? imageData = photo is Photo ? photo.data : null;
 
       if (imagePath != null && imagePath.isNotEmpty) {
-        final file = File(imagePath);
-        if (file.existsSync()) {
-          // Use file-backed image
-          imageWidget = Image.file(file, fit: BoxFit.cover);
-        } else {
-          // File path exists but file not found - show placeholder
-          imageWidget = const Icon(
-            Icons.image_not_supported,
-            color: Colors.grey,
+        final normalizedPath = imagePath.trim();
+        final isRemotePath =
+            normalizedPath.startsWith('http://') ||
+            normalizedPath.startsWith('https://');
+
+        if (isRemotePath) {
+          imageWidget = Image.network(
+            normalizedPath,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.image_not_supported, color: Colors.grey),
           );
+        } else {
+          final file = File(normalizedPath);
+          if (file.existsSync()) {
+            // Use file-backed image
+            imageWidget = Image.file(file, fit: BoxFit.cover);
+          } else if (imageUrl != null && imageUrl.isNotEmpty) {
+            imageWidget = Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.image_not_supported, color: Colors.grey),
+            );
+          } else {
+            // File path exists but file not found - show placeholder
+            imageWidget = const Icon(
+              Icons.image_not_supported,
+              color: Colors.grey,
+            );
+          }
         }
+      } else if (imageUrl != null && imageUrl.isNotEmpty) {
+        imageWidget = Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.image_not_supported, color: Colors.grey),
+        );
       } else if (imageData != null && imageData.isNotEmpty) {
         // Use base64-backed image for legacy items
         try {
@@ -411,17 +466,11 @@ class PhotoGridItem extends StatelessWidget {
           imageWidget = Image.memory(bytes, fit: BoxFit.cover);
         } catch (e) {
           // Fallback if base64 decode fails
-          imageWidget = const Icon(
-            Icons.broken_image,
-            color: Colors.grey,
-          );
+          imageWidget = const Icon(Icons.broken_image, color: Colors.grey);
         }
       } else {
         // No path and no data - show placeholder
-        imageWidget = const Icon(
-          Icons.photo,
-          color: Colors.grey,
-        );
+        imageWidget = const Icon(Icons.photo, color: Colors.grey);
       }
 
       return ClipRRect(
@@ -439,12 +488,18 @@ class PhotoGridItem extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
-                        colors: [Colors.black.withOpacity(0.7), Colors.transparent],
+                        colors: [
+                          Colors.black.withOpacity(0.7),
+                          Colors.transparent,
+                        ],
                       ),
                     ),
                     child: Column(
@@ -461,6 +516,17 @@ class PhotoGridItem extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (photo.severityLabel != null &&
+                            photo.severityLabel!.isNotEmpty)
+                          Text(
+                            photo.severityLabel!,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 8,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         if (photo.confidence != null)
                           Text(
                             '${(photo.confidence! * 100).round()}% confidence',
@@ -486,10 +552,7 @@ class PhotoGridItem extends StatelessWidget {
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(borderRadius),
         ),
-        child: const Icon(
-          Icons.broken_image,
-          color: Colors.grey,
-        ),
+        child: const Icon(Icons.broken_image, color: Colors.grey),
       );
     }
   }

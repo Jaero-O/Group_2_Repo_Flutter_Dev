@@ -29,8 +29,6 @@ class RecommendedActionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int totalDiseased = summary.moderateCount + summary.severeCount;
-
     return Card(
       color: const Color(0xFFFAFAFA),
       elevation: 3,
@@ -88,7 +86,11 @@ class RecommendedActionsCard extends StatelessWidget {
                     ],
                   ),
                   if (index < _actions.length - 1)
-                    const Divider(height: 24, thickness: 1, color: Color(0xFFEEEEEE)),
+                    const Divider(
+                      height: 24,
+                      thickness: 1,
+                      color: Color(0xFFEEEEEE),
+                    ),
                 ],
               );
             }).toList(),

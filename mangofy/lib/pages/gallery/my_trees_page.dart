@@ -124,7 +124,7 @@ class MyTreesPage extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: coverPhoto != null
-                          ? PhotoGridItem(photo: coverPhoto!, borderRadius: 0)
+                          ? PhotoGridItem(photo: coverPhoto, borderRadius: 0)
                           : Image.asset(
                               coverImage,
                               fit: BoxFit.cover,

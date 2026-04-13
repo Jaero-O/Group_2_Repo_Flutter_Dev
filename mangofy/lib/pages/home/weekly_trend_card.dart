@@ -15,10 +15,6 @@ class OutbreakPredictionCard extends StatelessWidget {
     this.latestOverride,
   });
 
-  static const List<double> _placeholderData = [
-    32, 26, 30, 22, 38, 28, 30, 35, 20, 25, 30
-  ];
-
   @override
   Widget build(BuildContext context) {
     final List<double> data = weeklyData ?? [];

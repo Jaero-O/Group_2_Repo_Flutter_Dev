@@ -17,11 +17,76 @@ class PhotoGridContent extends StatelessWidget {
     required this.photos,
   });
 
-  void _openFullScreenView(BuildContext context, String imagePath, [dynamic photo]) {
+  DateTime? _parseTimestamp(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final parsed =
+        DateTime.tryParse(trimmed) ??
+        DateTime.tryParse(trimmed.replaceFirst(' ', 'T'));
+    if (parsed != null) return parsed.toLocal();
+
+    final m = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?',
+    ).firstMatch(trimmed);
+    if (m == null) return null;
+
+    final y = int.tryParse(m.group(1) ?? '');
+    final mo = int.tryParse(m.group(2) ?? '');
+    final d = int.tryParse(m.group(3) ?? '');
+    final h = int.tryParse(m.group(4) ?? '0');
+    final mi = int.tryParse(m.group(5) ?? '0');
+    final s = int.tryParse(m.group(6) ?? '0');
+
+    if (y == null || mo == null || d == null) return null;
+    return DateTime(y, mo, d, h ?? 0, mi ?? 0, s ?? 0);
+  }
+
+  int _comparePhotosByTimestampDesc(PhotoMetadata a, PhotoMetadata b) {
+    final at = _parseTimestamp(a.timestamp);
+    final bt = _parseTimestamp(b.timestamp);
+
+    if (at != null && bt != null) return bt.compareTo(at);
+    if (at != null) return -1;
+    if (bt != null) return 1;
+    return (b.id ?? 0).compareTo(a.id ?? 0);
+  }
+
+  void _openFullScreenView(
+    BuildContext context,
+    String imagePath, [
+    dynamic photo,
+  ]) {
+    Photo? resolvedPhoto;
+    if (photo is Photo) {
+      resolvedPhoto = photo;
+    } else if (photo is PhotoMetadata) {
+      resolvedPhoto = Photo(
+        id: photo.id,
+        name: photo.name,
+        data: '',
+        timestamp: photo.timestamp,
+        path: photo.path,
+        title: photo.title,
+        description: photo.description,
+        imageUrl: photo.imageUrl,
+        checksum: photo.checksum,
+        source: photo.source,
+        updatedAt: photo.updatedAt,
+        disease: photo.disease,
+        severityLabel: photo.severityLabel,
+        confidence: photo.confidence,
+        severityValue: photo.severityValue,
+        photoId: photo.photoId,
+        scanDir: photo.scanDir,
+      );
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenPhotoView(imagePath: imagePath, photo: photo is Photo ? photo : null),
+        builder: (context) =>
+            FullScreenPhotoView(imagePath: imagePath, photo: resolvedPhoto),
       ),
     );
   }
@@ -42,27 +107,37 @@ class PhotoGridContent extends StatelessWidget {
       );
     }
     if (viewMode == 'All Photos') {
+      final sortedPhotos = List<PhotoMetadata>.from(photos)
+        ..sort(_comparePhotosByTimestampDesc);
       return PhotoGrid(
-        photos: photos as List<dynamic>,
+        photos: sortedPhotos as List<dynamic>,
         crossAxisCount: 4,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
         padding: const EdgeInsets.all(4),
         borderRadius: 4,
         onItemTap: (index) {
-          _openFullScreenView(context, photos[index].id.toString(), photos[index]);
+          _openFullScreenView(
+            context,
+            sortedPhotos[index].path ?? sortedPhotos[index].id.toString(),
+            sortedPhotos[index],
+          );
         },
         onItemLongPress: (index) {
           if (onPhotoLongPress != null) {
-            onPhotoLongPress!(photos[index].id.toString());
+            onPhotoLongPress!(sortedPhotos[index].id.toString());
           } else {
             GalleryDialogs.showDeleteConfirmationDialog(
               context,
               'Photo',
-              photos[index].id.toString(),
+              sortedPhotos[index].id.toString(),
               () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Photo ${photos[index].name} marked for deletion!')),
+                  SnackBar(
+                    content: Text(
+                      'Photo ${sortedPhotos[index].name} marked for deletion!',
+                    ),
+                  ),
                 );
               },
             );
@@ -93,15 +168,13 @@ class PhotoGridContent extends StatelessWidget {
       'December',
     ];
 
-    DateTime? parse(String raw) {
-      final dt = DateTime.tryParse(raw);
-      return dt?.toLocal();
-    }
-
     final datedPhotos = photos
-        .map((p) => (photo: p, time: parse(p.timestamp)))
+        .map((p) => (photo: p, time: _parseTimestamp(p.timestamp)))
         .where((x) => x.time != null)
         .toList();
+    final undatedPhotos = photos
+      .where((p) => _parseTimestamp(p.timestamp) == null)
+      .toList();
 
     // If timestamps are missing/unparseable, fall back to all-photos.
     if (datedPhotos.isEmpty) {
@@ -129,7 +202,10 @@ class PhotoGridContent extends StatelessWidget {
       final Map<int, Map<int, List<PhotoMetadata>>> grouped = {};
       for (final x in datedPhotos) {
         final t = x.time!;
-        (grouped[t.year] ??= {})[t.month] = [...(grouped[t.year]?[t.month] ?? const []), x.photo];
+        (grouped[t.year] ??= {})[t.month] = [
+          ...(grouped[t.year]?[t.month] ?? const []),
+          x.photo,
+        ];
       }
 
       final years = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -137,13 +213,18 @@ class PhotoGridContent extends StatelessWidget {
         sections.add(
           Padding(
             padding: const EdgeInsets.only(left: 12, top: 10, bottom: 12),
-            child: Text('$year', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            child: Text(
+              '$year',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
           ),
         );
 
-        final months = grouped[year]!.keys.toList()..sort((a, b) => b.compareTo(a));
+        final months = grouped[year]!.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
         for (final month in months) {
-          final monthPhotos = grouped[year]![month]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          final monthPhotos = grouped[year]![month]!
+            ..sort(_comparePhotosByTimestampDesc);
           sections.add(
             _buildGroupedColumn(
               context,
@@ -153,6 +234,18 @@ class PhotoGridContent extends StatelessWidget {
             ),
           );
         }
+      }
+
+      if (undatedPhotos.isNotEmpty) {
+        undatedPhotos.sort(_comparePhotosByTimestampDesc);
+        sections.add(
+          _buildGroupedColumn(
+            context,
+            'Undated',
+            undatedPhotos,
+            leftPadding: 24,
+          ),
+        );
       }
 
       return sections;
@@ -172,9 +265,15 @@ class PhotoGridContent extends StatelessWidget {
         final year = int.tryParse(parts[0]) ?? 0;
         final month = int.tryParse(parts[1]) ?? 1;
         final title = '${monthNames[month - 1]} $year';
-        final monthPhotos = grouped[key]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        final monthPhotos = grouped[key]!
+          ..sort(_comparePhotosByTimestampDesc);
         sections.add(_buildGroupedColumn(context, title, monthPhotos));
       }
+      if (undatedPhotos.isNotEmpty) {
+        undatedPhotos.sort(_comparePhotosByTimestampDesc);
+        sections.add(_buildGroupedColumn(context, 'Undated', undatedPhotos));
+      }
+
       return sections;
     }
 
@@ -182,7 +281,8 @@ class PhotoGridContent extends StatelessWidget {
     final Map<String, List<PhotoMetadata>> grouped = {};
     for (final x in datedPhotos) {
       final t = x.time!;
-      final key = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+      final key =
+          '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
       grouped[key] = [...(grouped[key] ?? const []), x.photo];
     }
     final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -192,9 +292,19 @@ class PhotoGridContent extends StatelessWidget {
       final month = int.tryParse(parts[1]) ?? 1;
       final day = int.tryParse(parts[2]) ?? 1;
       final title = '${monthNames[month - 1]} $day, $year';
-      final dayPhotos = grouped[key]!..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      sections.add(_buildGroupedColumn(context, title, dayPhotos, titleSize: 16));
+      final dayPhotos = grouped[key]!
+        ..sort(_comparePhotosByTimestampDesc);
+      sections.add(
+        _buildGroupedColumn(context, title, dayPhotos, titleSize: 16),
+      );
     }
+    if (undatedPhotos.isNotEmpty) {
+      undatedPhotos.sort(_comparePhotosByTimestampDesc);
+      sections.add(
+        _buildGroupedColumn(context, 'Undated', undatedPhotos, titleSize: 16),
+      );
+    }
+
     return sections;
   }
 
@@ -210,7 +320,10 @@ class PhotoGridContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
           _buildPhotoGrid(context, groupedPhotos),
         ],
@@ -218,7 +331,10 @@ class PhotoGridContent extends StatelessWidget {
     );
   }
 
-  Widget _buildPhotoGrid(BuildContext context, List<PhotoMetadata> groupedPhotos) {
+  Widget _buildPhotoGrid(
+    BuildContext context,
+    List<PhotoMetadata> groupedPhotos,
+  ) {
     return PhotoGrid(
       photos: groupedPhotos as List<dynamic>,
       shrinkWrap: true,
@@ -228,14 +344,23 @@ class PhotoGridContent extends StatelessWidget {
       mainAxisSpacing: 4,
       padding: EdgeInsets.zero,
       borderRadius: 8,
-      onItemTap: (index) => _openFullScreenView(context, groupedPhotos[index].id.toString(), groupedPhotos[index]),
+      onItemTap: (index) => _openFullScreenView(
+        context,
+        groupedPhotos[index].path ?? groupedPhotos[index].id.toString(),
+        groupedPhotos[index],
+      ),
       onItemLongPress: (index) {
         final id = groupedPhotos[index].id;
         if (id == null) return;
         if (onPhotoLongPress != null) {
           onPhotoLongPress!(id.toString());
         } else {
-          GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', id.toString(), () {});
+          GalleryDialogs.showDeleteConfirmationDialog(
+            context,
+            'Photo',
+            id.toString(),
+            () {},
+          );
         }
       },
     );
@@ -307,7 +432,7 @@ class _PhotosViewState extends State<PhotosView> {
 
   Widget _buildModeButton(String label) {
     final bool isActive = viewMode == label;
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => viewMode = label),

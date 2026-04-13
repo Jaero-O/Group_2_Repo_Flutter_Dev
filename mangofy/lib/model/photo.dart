@@ -12,6 +12,7 @@ class Photo {
   final String? source;
   final String? updatedAt;
   final String? disease;
+  final String? severityLabel;
   final double? confidence;
   final double? severityValue;
   final int? photoId;
@@ -30,6 +31,7 @@ class Photo {
     this.source,
     this.updatedAt,
     this.disease,
+    this.severityLabel,
     this.confidence,
     this.severityValue,
     this.photoId,
@@ -50,8 +52,9 @@ class Photo {
       source: map['source'] as String?,
       updatedAt: map['updated_at'] as String?,
       disease: map['disease'] as String?,
-      confidence: map['confidence'] as double?,
-      severityValue: map['severity_value'] as double?,
+      severityLabel: map['severity_label'] as String?,
+      confidence: (map['confidence'] as num?)?.toDouble(),
+      severityValue: (map['severity_value'] as num?)?.toDouble(),
       photoId: map['photo_id'] as int?,
       scanDir: map['scan_dir'] as String?,
     );
@@ -71,6 +74,7 @@ class Photo {
       if (source != null) 'source': source,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (disease != null) 'disease': disease,
+      if (severityLabel != null) 'severity_label': severityLabel,
       if (confidence != null) 'confidence': confidence,
       if (severityValue != null) 'severity_value': severityValue,
       if (photoId != null) 'photo_id': photoId,
@@ -92,6 +96,7 @@ class PhotoMetadata {
   final String? source;
   final String? updatedAt;
   final String? disease;
+  final String? severityLabel;
   final double? confidence;
   final double? severityValue;
   final int? photoId;
@@ -109,6 +114,7 @@ class PhotoMetadata {
     this.source,
     this.updatedAt,
     this.disease,
+    this.severityLabel,
     this.confidence,
     this.severityValue,
     this.photoId,
@@ -128,8 +134,9 @@ class PhotoMetadata {
       source: map['source'] as String?,
       updatedAt: map['updated_at'] as String?,
       disease: map['disease'] as String?,
-      confidence: map['confidence'] as double?,
-      severityValue: map['severity_value'] as double?,
+      severityLabel: map['severity_label'] as String?,
+      confidence: (map['confidence'] as num?)?.toDouble(),
+      severityValue: (map['severity_value'] as num?)?.toDouble(),
       photoId: map['photo_id'] as int?,
       scanDir: map['scan_dir'] as String?,
     );
@@ -151,6 +158,7 @@ class PhotoMetadata {
       source: source,
       updatedAt: updatedAt,
       disease: disease,
+      severityLabel: severityLabel,
       confidence: confidence,
       severityValue: severityValue,
       photoId: photoId,

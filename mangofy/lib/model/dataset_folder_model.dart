@@ -27,11 +27,18 @@ class DatasetFolder {
 
   // Convert a Map (from the database) into a DatasetFolder object.
   static DatasetFolder fromMap(Map<String, dynamic> map) {
+    final rawImages = (map['images'] as String?) ?? '';
     return DatasetFolder(
       id: map['id'] as int?,
       name: map['name'] as String,
       // Parse the comma-separated String back into a List<String>
-      images: (map['images'] as String).split(','),
+      images: rawImages.trim().isEmpty
+          ? <String>[]
+          : rawImages
+                .split(',')
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList(),
       dateCreated: map['date_created'] as String,
     );
   }

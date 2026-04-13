@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../services/database_service.dart'; 
+import 'dart:io';
+import '../../services/local_db.dart';
+import '../../model/scan_item.dart';
 
 // SVG folder icon.
 class SvgFolderIcon extends StatelessWidget {
@@ -23,37 +25,105 @@ class SvgFolderIcon extends StatelessWidget {
 // Displays a single image in a full-screen view.
 class FullScreenPhotoPage extends StatelessWidget {
   final String imageId;
+  final String? imagePath;
+  final String? disease;
+  final String? severityLabel;
+  final String? dateScanned;
 
-  const FullScreenPhotoPage({super.key, required this.imageId});
+  const FullScreenPhotoPage({
+    super.key,
+    required this.imageId,
+    this.imagePath,
+    this.disease,
+    this.severityLabel,
+    this.dateScanned,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       // Set background to black for a typical photo viewer experience
-      backgroundColor: Colors.black, 
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Center the photo content 
           Center(
-            child: Text(
-              imageId,
-              style: const TextStyle(
-                fontSize: 18,
-                color: Colors.white, 
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            child:
+                (imagePath != null &&
+                    imagePath!.isNotEmpty &&
+                    File(imagePath!).existsSync())
+                ? Image.file(File(imagePath!), fit: BoxFit.contain)
+                : Text(
+                    imageId,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
           ),
-          
-          // Close Button 
+
+          if ((disease != null && disease!.isNotEmpty) ||
+              (severityLabel != null && severityLabel!.isNotEmpty) ||
+              (dateScanned != null && dateScanned!.isNotEmpty))
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.85),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (disease != null && disease!.isNotEmpty)
+                      Text(
+                        'Disease: $disease',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (severityLabel != null && severityLabel!.isNotEmpty)
+                      Text(
+                        'Classification: $severityLabel',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    if (dateScanned != null && dateScanned!.isNotEmpty)
+                      Text(
+                        'Scanned: $dateScanned',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Close Button
           Positioned(
-            top: 40, 
+            top: 40,
             right: 10,
             child: SafeArea(
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () => Navigator.of(context).pop(), 
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ),
           ),
@@ -68,13 +138,13 @@ class FolderViewPage extends StatefulWidget {
   final String folderName;
   final List<dynamic> images;
   // Callback when an image is removed
-  final VoidCallback onImageRemoved; 
+  final VoidCallback onImageRemoved;
 
   const FolderViewPage({
     super.key,
     required this.folderName,
     required this.images,
-    required this.onImageRemoved, 
+    required this.onImageRemoved,
   });
 
   @override
@@ -83,34 +153,62 @@ class FolderViewPage extends StatefulWidget {
 
 class _FolderViewPageState extends State<FolderViewPage> {
   // Use a local state for images so it can be updated after deletion
-  late List<dynamic> _currentImages; 
+  late List<dynamic> _currentImages;
+  Map<String, String?> _imagePaths = {};
+  Map<String, ScanItem?> _scanItems = {};
 
   @override
   void initState() {
     super.initState();
-    _currentImages = widget.images; 
+    _currentImages = widget.images;
+    _loadImagePaths();
+  }
+
+  Future<void> _loadImagePaths() async {
+    final paths = <String, String?>{};
+    final scans = <String, ScanItem?>{};
+    for (final img in _currentImages) {
+      final id = int.tryParse(img.toString());
+      if (id != null) {
+        final scan = await LocalDb.instance.getScanById(id);
+        paths[img] = scan?.imagePath;
+        scans[img] = scan;
+      }
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _imagePaths = paths;
+      _scanItems = scans;
+    });
   }
 
   // Helper to show the delete confirmation dialog for an image
- // Helper to show the delete confirmation dialog for an image
+  // Helper to show the delete confirmation dialog for an image
   void _showDeleteImageDialog(BuildContext context, String imageId) {
     showDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
           contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           content: SizedBox(
             width: MediaQuery.of(context).size.width,
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center, // Centered like Gallery
+              crossAxisAlignment:
+                  CrossAxisAlignment.center, // Centered like Gallery
               children: [
                 Text(
                   'Delete Image?',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -132,10 +230,16 @@ class _FolderViewPageState extends State<FolderViewPage> {
                           foregroundColor: Colors.black,
                           backgroundColor: Colors.grey[200],
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                        child: Text('Cancel', 
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ),
@@ -146,7 +250,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
                           Navigator.pop(dialogContext);
 
                           // Call DB service to remove the image
-                          await DatabaseService.instance.removeImageFromDatasetFolder(
+                          await LocalDb.instance.removeImageFromDatasetFolder(
                             widget.folderName,
                             imageId,
                           );
@@ -167,10 +271,16 @@ class _FolderViewPageState extends State<FolderViewPage> {
                           foregroundColor: Colors.white,
                           backgroundColor: Colors.red,
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                        child: Text('Delete', 
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 16)
+                        child: Text(
+                          'Delete',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ),
@@ -197,34 +307,50 @@ class _FolderViewPageState extends State<FolderViewPage> {
             color: Colors.green,
           ),
         ),
-        backgroundColor: Colors.white, 
-        iconTheme: const IconThemeData(color: Colors.green), 
-        elevation: 0, 
+        backgroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.green),
+        elevation: 0,
       ),
-      
-      // Grid displaying folder photos 
+
+      // Grid displaying folder photos
       body: _currentImages.isEmpty
           ? const Center(child: Text("This folder is empty."))
           : GridView.builder(
-              padding: const EdgeInsets.all(16), 
+              padding: const EdgeInsets.all(16),
 
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3, // 3 columns
-                crossAxisSpacing: 6, // Horizontal spacing 
-                mainAxisSpacing: 6, // Vertical spacing 
+                crossAxisSpacing: 6, // Horizontal spacing
+                mainAxisSpacing: 6, // Vertical spacing
               ),
-              
+
               itemCount: _currentImages.length,
               itemBuilder: (context, index) {
                 final img = _currentImages[index].toString();
+                final path = _imagePaths[img];
+                final scan = _scanItems[img];
+                final parsed = DateTime.tryParse(scan?.timestamp ?? '');
+                final dateLabel = parsed == null
+                    ? (scan?.timestamp ?? '')
+                    : '${parsed.toLocal().year.toString().padLeft(4, '0')}-${parsed.toLocal().month.toString().padLeft(2, '0')}-${parsed.toLocal().day.toString().padLeft(2, '0')}';
+                final diseaseLabel = scan?.diseaseName.isNotEmpty == true
+                    ? scan!.diseaseName
+                    : (scan?.disease ?? '');
+                final severityLabel = scan?.severityLevelName ?? '';
 
-                return GestureDetector( 
+                return GestureDetector(
                   // Tap to view full screen
-                  onTap: () { 
+                  onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => FullScreenPhotoPage(imageId: img),
+                        builder: (context) => FullScreenPhotoPage(
+                          imageId: img,
+                          imagePath: path,
+                          disease: diseaseLabel,
+                          severityLabel: severityLabel,
+                          dateScanned: dateLabel,
+                        ),
                       ),
                     );
                   },
@@ -235,19 +361,85 @@ class _FolderViewPageState extends State<FolderViewPage> {
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8), 
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Center(
-                      child: Text(
-                        img,
-                        style: const TextStyle(fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                    child: path != null && path.isNotEmpty
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.file(
+                                  File(path),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.image_not_supported),
+                                ),
+                                if (diseaseLabel.isNotEmpty ||
+                                    severityLabel.isNotEmpty)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.bottomCenter,
+                                          end: Alignment.topCenter,
+                                          colors: [
+                                            Colors.black.withOpacity(0.7),
+                                            Colors.transparent,
+                                          ],
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (diseaseLabel.isNotEmpty)
+                                            Text(
+                                              diseaseLabel,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          if (severityLabel.isNotEmpty)
+                                            Text(
+                                              severityLabel,
+                                              style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 8,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              'No image',
+                              style: const TextStyle(fontSize: 12),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                   ),
                 );
               },
             ),
     );
   }
-} 
+}

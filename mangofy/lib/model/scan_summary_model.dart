@@ -4,13 +4,19 @@
 class ScanSummary {
   final int totalScans;
   final int healthyCount;
-  final int moderateCount;
-  final int severeCount;
+  final int earlyStageCount;
+  final int advancedStageCount;
 
   ScanSummary({
     required this.totalScans,
     required this.healthyCount,
-    required this.moderateCount,
-    required this.severeCount,
+    required this.earlyStageCount,
+    required this.advancedStageCount,
   });
+
+  @Deprecated('Use earlyStageCount instead.')
+  int get moderateCount => earlyStageCount;
+
+  @Deprecated('Use advancedStageCount instead.')
+  int get severeCount => advancedStageCount;
 }
