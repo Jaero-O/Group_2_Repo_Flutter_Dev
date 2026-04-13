@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:io';
 import 'my_trees_page.dart';
 import 'photos_view.dart';
 import 'gallery_selection_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
-import '../../services/database_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/local_db.dart';
 import '../../model/my_tree_model.dart';
 import '../../model/photo.dart'; 
 
@@ -30,7 +31,7 @@ class _GalleryPageState extends State<GalleryPage> {
   final List<String> selectedImages = [];
   String? selectedAlbumTitle;
   List<MyTree> myTreesAlbums = [];
-  List<Photo> photos = [];
+  List<PhotoMetadata> photos = [];
 
   @override
   void initState() {
@@ -52,12 +53,64 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Future<void> _loadData() async {
-    final myTrees = await DatabaseService.instance.getAllMyTrees();
-    final photosData = await DatabaseService.instance.getAllPhotos();
-    setState(() {
-      myTreesAlbums = myTrees;
-      photos = photosData.map((map) => Photo.fromMap(map)).toList();
-    });
+    try {
+      debugPrint('GalleryPage: Starting _loadData');
+      final myTreesData = await LocalDb.instance.getAllMyTrees();
+      debugPrint('GalleryPage: Loaded ${myTreesData.length} trees from LocalDb');
+      final myTrees = myTreesData.map((map) => MyTree.fromMap(map)).toList();
+      
+      // Load primary source: enhanced photos from pi_sync.db
+      final allPhotosData = await LocalDb.instance.getAllPhotoMetadata();
+      debugPrint('GalleryPage: Loaded ${allPhotosData.length} photo metadata from LocalDb');
+      final List<PhotoMetadata> enhancedPhotos = allPhotosData.map((map) => PhotoMetadata.fromMap(map)).toList();
+      debugPrint('GalleryPage: Created ${enhancedPhotos.length} enhanced photo metadata');
+
+      // Load secondary source: LocalDb scans that haven't been synced to photos yet
+      final scans = await LocalDb.instance.getAllScans();
+      debugPrint('GalleryPage: Loaded ${scans.length} scans from LocalDb');
+      final syncedPhotoIds = enhancedPhotos
+          .where((photo) => photo.photoId != null)
+          .map((photo) => photo.photoId!)
+          .toSet();
+      final unsyncedScans = scans.where((scan) => !syncedPhotoIds.contains(scan.id));
+      final pathBasedPhotos = unsyncedScans
+          .where((scan) => scan.imagePath.isNotEmpty && File(scan.imagePath).existsSync())
+          .map((scan) => PhotoMetadata(
+                id: scan.id,
+                name: scan.disease.isNotEmpty ? scan.disease : scan.title,
+                timestamp: scan.timestamp,
+                path: scan.imagePath,
+                title: scan.title,
+                description: scan.description,
+                imageUrl: scan.imageUrl,
+                checksum: scan.checksum,
+                source: scan.source,
+                updatedAt: scan.updatedAt,
+                disease: scan.disease,
+                confidence: scan.confidence,
+                severityValue: scan.severityValue,
+                photoId: scan.photoId,
+                scanDir: scan.scanDir,
+              ))
+          .toList();
+      debugPrint('GalleryPage: Created ${pathBasedPhotos.length} path-based photos from unsynced scans');
+
+      // Merge: enhanced photos first, then unsynced path-based photos
+      final List<PhotoMetadata> allPhotos = [...enhancedPhotos, ...pathBasedPhotos];
+      debugPrint('GalleryPage: Total photos: ${allPhotos.length}');
+      
+      setState(() {
+        myTreesAlbums = myTrees;
+        photos = allPhotos;
+      });
+      debugPrint('GalleryPage: Set state successfully');
+    } catch (e) {
+      // If loading fails, show empty gallery instead of crashing
+      setState(() {
+        myTreesAlbums = [];
+        photos = [];
+      });
+    }
   }
   
   // --- CUSTOM MODAL NOTIFICATION HELPER ---
@@ -105,23 +158,23 @@ class _GalleryPageState extends State<GalleryPage> {
   // --- HANDLERS ---
 
   void _handleAlbumCreation(String albumName, List<String> selectedImageIds) async {
-    await DatabaseService.instance.insertMyTree( 
+    await LocalDb.instance.insertMyTree( 
       title: albumName,
       location: 'New Album Location', 
-      imageIds: selectedImageIds,
+      images: selectedImageIds.join(','),
     );
     await _loadData();
     _showNotification('Tree "$albumName" created successfully!');
   }
 
   void _handleAlbumNameUpdate(String oldName, String newName) async {
-    await DatabaseService.instance.updateMyTreeTitle(oldName, newName);
+    await LocalDb.instance.updateMyTreeTitle(oldName, newName);
     await _loadData();
     _showNotification('Tree renamed to "$newName"');
   }
 
   void _handleAlbumDeletion(String albumName) async {
-    await DatabaseService.instance.deleteMyTree(albumName);
+    await LocalDb.instance.deleteMyTreeByTitle(albumName);
     await _loadData();
     _showNotification('Tree "$albumName" deleted.', isDelete: true);
   }
@@ -163,7 +216,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 onTap: () async {
                   Navigator.pop(sheetContext);
                   GalleryDialogs.showDeleteConfirmationDialog(context, 'Photo', imageId, () async {
-                    await DatabaseService.instance.deletePhoto(int.parse(imageId));
+                    await LocalDb.instance.deletePhoto(int.parse(imageId));
                     await _loadData();
                     _showNotification('Photo deleted!', isDelete: true);
                   });
@@ -277,7 +330,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Widget _buildBodyContent() {
     final bool isPhotoSelectionScreen = widget.isSelectionMode && (isPhotosView || selectedAlbumTitle != null);
-    final Map<int, Photo> photosById = {
+    final Map<int, PhotoMetadata> photosById = {
       for (final p in photos)
         if (p.id != null) p.id!: p,
     };

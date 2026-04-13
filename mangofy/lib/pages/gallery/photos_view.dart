@@ -8,7 +8,7 @@ import '../../model/photo.dart';
 class PhotoGridContent extends StatelessWidget {
   final String viewMode;
   final ValueChanged<String>? onPhotoLongPress;
-  final List<Photo> photos;
+  final List<PhotoMetadata> photos;
 
   const PhotoGridContent({
     super.key,
@@ -17,11 +17,11 @@ class PhotoGridContent extends StatelessWidget {
     required this.photos,
   });
 
-  void _openFullScreenView(BuildContext context, String imagePath, [Photo? photo]) {
+  void _openFullScreenView(BuildContext context, String imagePath, [dynamic photo]) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullScreenPhotoView(imagePath: imagePath, photo: photo),
+        builder: (context) => FullScreenPhotoView(imagePath: imagePath, photo: photo is Photo ? photo : null),
       ),
     );
   }
@@ -43,7 +43,7 @@ class PhotoGridContent extends StatelessWidget {
     }
     if (viewMode == 'All Photos') {
       return PhotoGrid(
-        photos: photos,
+        photos: photos as List<dynamic>,
         crossAxisCount: 4,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
@@ -126,7 +126,7 @@ class PhotoGridContent extends StatelessWidget {
     List<Widget> sections = [];
 
     if (viewMode == 'Years') {
-      final Map<int, Map<int, List<Photo>>> grouped = {};
+      final Map<int, Map<int, List<PhotoMetadata>>> grouped = {};
       for (final x in datedPhotos) {
         final t = x.time!;
         (grouped[t.year] ??= {})[t.month] = [...(grouped[t.year]?[t.month] ?? const []), x.photo];
@@ -159,7 +159,7 @@ class PhotoGridContent extends StatelessWidget {
     }
 
     if (viewMode == 'Months') {
-      final Map<String, List<Photo>> grouped = {};
+      final Map<String, List<PhotoMetadata>> grouped = {};
       for (final x in datedPhotos) {
         final t = x.time!;
         final key = '${t.year}-${t.month.toString().padLeft(2, '0')}';
@@ -179,13 +179,12 @@ class PhotoGridContent extends StatelessWidget {
     }
 
     // Days
-    final Map<String, List<Photo>> grouped = {};
+    final Map<String, List<PhotoMetadata>> grouped = {};
     for (final x in datedPhotos) {
       final t = x.time!;
       final key = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
       grouped[key] = [...(grouped[key] ?? const []), x.photo];
     }
-
     final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
     for (final key in keys) {
       final parts = key.split('-');
@@ -202,7 +201,7 @@ class PhotoGridContent extends StatelessWidget {
   Widget _buildGroupedColumn(
     BuildContext context,
     String title,
-    List<Photo> groupedPhotos, {
+    List<PhotoMetadata> groupedPhotos, {
     double leftPadding = 12,
     double titleSize = 20,
   }) {
@@ -219,9 +218,9 @@ class PhotoGridContent extends StatelessWidget {
     );
   }
 
-  Widget _buildPhotoGrid(BuildContext context, List<Photo> groupedPhotos) {
+  Widget _buildPhotoGrid(BuildContext context, List<PhotoMetadata> groupedPhotos) {
     return PhotoGrid(
-      photos: groupedPhotos,
+      photos: groupedPhotos as List<dynamic>,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 4,
@@ -247,7 +246,7 @@ class PhotoGridContent extends StatelessWidget {
 
 class PhotosView extends StatefulWidget {
   final ValueChanged<String>? onPhotoLongPress;
-  final List<Photo> photos;
+  final List<PhotoMetadata> photos;
 
   const PhotosView({super.key, this.onPhotoLongPress, required this.photos});
 

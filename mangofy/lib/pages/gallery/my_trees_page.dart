@@ -23,7 +23,7 @@ class MyTreesPage extends StatelessWidget {
   final List<MyTree> albums;
 
   // Optional lookup for real photo thumbnails (keyed by Photo.id)
-  final Map<int, Photo> photosById;
+  final Map<int, PhotoMetadata> photosById;
 
   const MyTreesPage({
     super.key,
@@ -71,7 +71,7 @@ class MyTreesPage extends StatelessWidget {
         final location = album.location;
         final images = album.images;
 
-        Photo? coverPhoto;
+        PhotoMetadata? coverPhoto;
         for (final rawId in images.reversed) {
           final id = int.tryParse(rawId);
           if (id == null) continue;

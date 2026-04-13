@@ -1,7 +1,5 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import '../model/scan_summary_model.dart';
-import '../model/scan_model.dart';
 import '../model/my_tree_model.dart';
 import '../model/dataset_folder_model.dart';
 
@@ -12,7 +10,6 @@ class DatabaseService {
   DatabaseService._init();
 
   // Table names
-  static const String scanTable = "scan_history";
   static const String treesTable = "my_trees";
   static const String datasetsTable = "dataset_folders";
   static const String photosTable = "photos";
@@ -21,8 +18,6 @@ class DatabaseService {
   static const String colId = "id";
   static const String colDisease = "disease";
   static const String colSeverityValue = "severity_value";
-  static const String colStatus = "status";
-  static const String colDate = "date";
 
   static const String colTreeTitle = "title";
   static const String colTreeLocation = "location";
@@ -36,6 +31,17 @@ class DatabaseService {
   static const String colPhotoData = "data";
   static const String colPhotoName = "name";
   static const String colPhotoTimestamp = "timestamp";
+  static const String colPath = "path";
+  // Additional scan fields
+  static const String colTitle = "title";
+  static const String colDescription = "description";
+  static const String colImageUrl = "image_url";
+  static const String colChecksum = "checksum";
+  static const String colSource = "source";
+  static const String colUpdatedAt = "updated_at";
+  static const String colConfidence = "confidence";
+  static const String colPhotoId = "photo_id";
+  static const String colScanDir = "scan_dir";
 
   // Public getter
   Future<Database> get database async {
@@ -50,7 +56,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 7, 
+      version: 9, 
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -58,16 +64,6 @@ class DatabaseService {
 
   // Create Tables
   Future<void> _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE $scanTable (
-        $colId INTEGER PRIMARY KEY AUTOINCREMENT,
-        $colDisease TEXT NOT NULL,
-        $colSeverityValue REAL NOT NULL,
-        $colStatus TEXT NOT NULL,
-        $colDate TEXT NOT NULL
-      )
-    ''');
-
     await db.execute('''
       CREATE TABLE $treesTable (
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +88,8 @@ class DatabaseService {
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
         $colPhotoName TEXT NOT NULL,
         $colPhotoData TEXT NOT NULL,
-        $colPhotoTimestamp TEXT NOT NULL
+        $colPhotoTimestamp TEXT NOT NULL,
+        $colPath TEXT
       )
     ''');
   }
@@ -135,82 +132,24 @@ class DatabaseService {
         )
       ''');
     }
-  }
 
-  // Scan Records
-  Future<int> insertScan({
-    required String disease,
-    required double severityValue,
-    required String status,
-    required String date,
-  }) async {
-    final db = await instance.database;
-
-    return await db.insert(scanTable, {
-      colDisease: disease,
-      colSeverityValue: severityValue,
-      colStatus: status,
-      colDate: date,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<List<Map<String, dynamic>>> getAllScans() async {
-    final db = await instance.database;
-    return await db.query(scanTable, orderBy: "$colId DESC");
-  }
-
-  Future<int> updateScan(ScanRecord record) async {
-    final db = await instance.database;
-
-    return db.update(
-      scanTable,
-      record.toMap(),
-      where: "$colId = ?",
-      whereArgs: [record.id],
-    );
-  }
-
-  Future<int> deleteScan(int id) async {
-    final db = await instance.database;
-
-    return db.delete(scanTable, where: "$colId = ?", whereArgs: [id]);
-  }
-
-  Future<int> deleteAllScans() async {
-    final db = await instance.database;
-    return await db.delete(scanTable);
-  }
-
-  // Scan Summary Aggregation
-  Future<ScanSummary> getScanSummary() async {
-    final db = await instance.database;
-    final maps = await db.query(scanTable);
-
-    int total = maps.length;
-    int healthy = 0, moderate = 0, severe = 0;
-
-    for (final map in maps) {
-      final r = ScanRecord.fromMap(map);
-
-      switch (r.status) {
-        case "Healthy":
-          healthy++;
-          break;
-        case "Moderate":
-          moderate++;
-          break;
-        case "Severe":
-          severe++;
-          break;
-      }
+    // Migration for versions < 8: Add path column to photos table
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN path TEXT');
     }
 
-    return ScanSummary(
-      totalScans: total,
-      healthyCount: healthy,
-      moderateCount: moderate,
-      severeCount: severe,
-    );
+    // Migration for versions < 9: Add scan fields to photos table
+    if (oldVersion < 9) {
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colTitle TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colDescription TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colImageUrl TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colChecksum TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colSource TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colUpdatedAt TEXT');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colConfidence REAL');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colPhotoId INTEGER');
+      await db.execute('ALTER TABLE $photosTable ADD COLUMN $colScanDir TEXT');
+    }
   }
 
   // My Trees
@@ -371,15 +310,39 @@ class DatabaseService {
   // Photos
   Future<int> insertPhoto({
     required String name,
-    required String data,
+    String? data,
+    String? path,
     required String timestamp,
+    String? title,
+    String? description,
+    String? imageUrl,
+    String? checksum,
+    String? source,
+    String? updatedAt,
+    String? disease,
+    double? confidence,
+    double? severityValue,
+    int? photoId,
+    String? scanDir,
   }) async {
     final db = await instance.database;
 
     return await db.insert(photosTable, {
       colPhotoName: name,
-      colPhotoData: data,
+      colPhotoData: data ?? '', // Always provide a value for NOT NULL column
       colPhotoTimestamp: timestamp,
+      if (path != null) colPath: path,
+      if (title != null) colTitle: title,
+      if (description != null) colDescription: description,
+      if (imageUrl != null) colImageUrl: imageUrl,
+      if (checksum != null) colChecksum: checksum,
+      if (source != null) colSource: source,
+      if (updatedAt != null) colUpdatedAt: updatedAt,
+      if (disease != null) colDisease: disease,
+      if (confidence != null) colConfidence: confidence,
+      if (severityValue != null) colSeverityValue: severityValue,
+      if (photoId != null) colPhotoId: photoId,
+      if (scanDir != null) colScanDir: scanDir,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 

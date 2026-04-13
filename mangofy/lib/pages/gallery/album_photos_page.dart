@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'photo_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
 import '../../model/photo.dart';
-import '../../services/database_service.dart';
+import '../../services/local_db.dart';
 
 class AlbumPhotosPage extends StatefulWidget {
   final String albumTitle;
@@ -31,7 +31,7 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
   Future<List<Photo>> _loadAlbumPhotos() async {
     final ids = widget.images.map(int.tryParse).whereType<int>().toList();
     if (ids.isEmpty) return <Photo>[];
-    final maps = await DatabaseService.instance.getPhotosByIds(ids);
+    final maps = await LocalDb.instance.getPhotosByIds(ids);
     final photos = maps.map((m) => Photo.fromMap(m)).where((p) => p.id != null).toList();
     final byId = {for (final p in photos) p.id!: p};
     return [for (final id in ids) if (byId[id] != null) byId[id]!];

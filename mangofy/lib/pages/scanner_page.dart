@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../services/qr_scanner_service.dart';
 import '../services/local_db.dart';
 import '../services/sync_service.dart';
@@ -15,11 +17,95 @@ class ScannerPage extends StatefulWidget {
 }
 
 class _ScannerPageState extends State<ScannerPage> {
+  static const double _scanFrameSize = 280;
+  static const Offset _scanFrameOffset = Offset(0, -48);
+
   final QrScannerService _scannerService = QrScannerService();
 
   Uint8List? _imageBytes;
   bool _scanned = false;
   String? _error;
+  String? _status;
+  double? _progressPercent;
+  bool _cameraReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initCameraPermission();
+    SyncService.instance.progressNotifier.addListener(_onProgressChanged);
+  }
+
+  void _onProgressChanged() {
+    if (!mounted) return;
+    final progress = SyncService.instance.progressNotifier.value;
+    setState(() {
+      _status = progress?.message;
+      _progressPercent = progress?.percent;
+    });
+  }
+
+  Future<void> _initCameraPermission() async {
+    if (!mounted) return;
+    final status = await Permission.camera.status;
+    if (!mounted) return;
+    setState(() {
+      _cameraReady = status.isGranted;
+    });
+  }
+
+  Future<bool> _requestCameraPermission() async {
+    final result = await Permission.camera.request();
+    if (!mounted) return false;
+    setState(() {
+      _cameraReady = result.isGranted;
+    });
+    return result.isGranted;
+  }
+
+  Future<bool> _ensureWifiPermissions() async {
+    if (!Platform.isAndroid) return true;
+
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
+
+    if (sdkInt >= 33) {
+      final nearby = await Permission.nearbyWifiDevices.request();
+      final location = await Permission.locationWhenInUse.request();
+      return nearby.isGranted && location.isGranted;
+    }
+
+    // Android 10–12 commonly require Location permission to access SSID / Wi‑Fi scan state.
+    final location = await Permission.locationWhenInUse.request();
+    return location.isGranted;
+  }
+
+  String _humanizeError(Object e) {
+    final msg = e.toString();
+
+    if (e is FormatException) {
+      return e.message;
+    }
+
+    final lower = msg.toLowerCase();
+    if (lower.contains('cleartext')) {
+      return 'HTTP blocked. Cleartext HTTP traffic to the Pi is not permitted on this device.';
+    }
+    if (lower.contains('cannot read ssid')) {
+      return 'Connected, but Android cannot read SSID. Turn ON Location services and grant Nearby Wi-Fi + Location permissions.';
+    }
+    if (lower.contains('ssid mismatch')) {
+      return 'Connected to a different Wi-Fi than Pi-Proto-Net. Switch to Pi hotspot and retry.';
+    }
+    if (lower.contains('permission')) {
+      return 'Missing permissions. Please grant Camera and Wi‑Fi permissions and try again.';
+    }
+    if (lower.contains('unable to reach pi hotspot') || lower.contains('not routing')) {
+      return 'Connected to Wi‑Fi but not routing to Pi. Try turning off mobile data and retry.';
+    }
+
+    return 'Sync failed. ${msg.replaceFirst('Exception: ', '')}';
+  }
 
   void _onDetect(BarcodeCapture capture) async {
     if (_scanned) return;
@@ -30,26 +116,53 @@ class _ScannerPageState extends State<ScannerPage> {
     setState(() => _scanned = true);
 
     try {
+      setState(() {
+        _status = 'Parsing QR…';
+        _error = null;
+        _progressPercent = null;
+      });
+
       final qrData = PiQrData.fromRaw(raw);
+
+      setState(() {
+        _status = 'Requesting Wi‑Fi permission…';
+      });
+      final wifiOk = await _ensureWifiPermissions();
+      if (!wifiOk) {
+        throw Exception('Wi‑Fi permission denied');
+      }
 
       // Automatically connect and sync with Pi when the QR is scanned.
       await SyncService.instance.syncFromPi(qrData);
 
-      final localScan = await LocalDb.instance.getScanById(int.parse(qrData.scanId));
-      if (localScan == null) throw Exception('Imported scan not found locally');
+      setState(() {
+        _status = 'Loading imported result…';
+        _progressPercent = null;
+      });
 
-      final bytes = await File(localScan.imagePath).readAsBytes();
+      Uint8List? bytes;
+      final id = int.tryParse(qrData.scanId ?? '');
+      if (id != null) {
+        final localScan = await LocalDb.instance.getScanById(id);
+        if (localScan != null && localScan.imagePath.isNotEmpty) {
+          bytes = await File(localScan.imagePath).readAsBytes();
+        }
+      }
 
       if (mounted) {
         setState(() {
           _imageBytes = bytes;
           _error = null;
+          _status = null;
+          _progressPercent = null;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Sync failed: $e';
+          _error = _humanizeError(e);
+          _status = null;
+          _progressPercent = null;
         });
       }
     }
@@ -60,12 +173,15 @@ class _ScannerPageState extends State<ScannerPage> {
       _imageBytes = null;
       _scanned = false;
       _error = null;
+      _status = null;
+      _progressPercent = null;
     });
   }
 
   @override
   void dispose() {
     _scannerService.dispose();
+    SyncService.instance.progressNotifier.removeListener(_onProgressChanged);
     super.dispose();
   }
 
@@ -79,6 +195,35 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Widget _buildScanner() {
+    if (!_cameraReady) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.camera_alt, size: 64, color: Colors.green),
+              const SizedBox(height: 12),
+              const Text(
+                'Camera permission is required to scan the Pi QR code.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _requestCameraPermission,
+                child: const Text('Grant Camera Permission'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: openAppSettings,
+                child: const Text('Open App Settings'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -93,7 +238,6 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Widget _buildScannerOverlay() {
-    const double frameSize = 280;
     const double cornerWidth = 5;
     const double cornerLength = 44;
 
@@ -101,15 +245,15 @@ class _ScannerPageState extends State<ScannerPage> {
       children: [
         Positioned.fill(
           child: CustomPaint(
-            painter: _ScannerMaskPainter(frameSize: frameSize),
+            painter: _ScannerMaskPainter(frameSize: _scanFrameSize),
           ),
         ),
         Center(
           child: Transform.translate(
-            offset: const Offset(0, -48),
+            offset: _scanFrameOffset,
             child: SizedBox(
-              width: frameSize,
-              height: frameSize,
+              width: _scanFrameSize,
+              height: _scanFrameSize,
               child: CustomPaint(
                 painter: _QrGuidePainter(
                   color: Colors.greenAccent,
@@ -171,8 +315,38 @@ class _ScannerPageState extends State<ScannerPage> {
       );
     }
 
+    if (_status != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_progressPercent != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: LinearProgressIndicator(value: _progressPercent),
+              )
+            else
+              const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(_status!, textAlign: TextAlign.center),
+          ],
+        ),
+      );
+    }
+
     if (_imageBytes == null) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green, size: 56),
+            const SizedBox(height: 12),
+            const Text('Sync complete.'),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _reset, child: const Text('Scan Another')),
+          ],
+        ),
+      );
     }
 
     return Column(

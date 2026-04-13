@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
 import '../../model/photo.dart';
-import '../../services/database_service.dart';
+import '../../services/local_db.dart';
 import '../gallery/photo_widgets.dart';
 
 class ScanDetailsPage extends StatelessWidget {
@@ -99,7 +99,7 @@ class ScanDetailsPage extends StatelessWidget {
   Widget _buildImagePreview() {
     if (photoId != null) {
       return FutureBuilder<Map<String, dynamic>?>(
-        future: DatabaseService.instance.getPhotoById(photoId!),
+        future: LocalDb.instance.getPhotoById(photoId!),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

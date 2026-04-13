@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:io';
 import '../../model/photo.dart';
 
 // Displays a single photo in full screen with a close button.
@@ -53,6 +54,114 @@ class FullScreenPhotoView extends StatelessWidget {
                     ),
                   ),
           ),
+          
+          // Scan Information Panel (if available)
+          if (photo != null && (photo!.disease != null || photo!.title != null || photo!.description != null))
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (photo!.title != null && photo!.title!.isNotEmpty)
+                      Text(
+                        photo!.title!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    if (photo!.disease != null && photo!.disease!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.science, color: Colors.white70, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Disease: ${photo!.disease!}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (photo!.confidence != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified, color: Colors.white70, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Confidence: ${(photo!.confidence! * 100).round()}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (photo!.severityValue != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning, color: Colors.white70, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Severity: ${photo!.severityValue!.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (photo!.description != null && photo!.description!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          photo!.description!,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    if (photo!.timestamp.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Scanned: ${DateTime.tryParse(photo!.timestamp)?.toLocal().toString().split('.')[0] ?? photo!.timestamp}',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           
           // Close Button
           Positioned(
@@ -198,9 +307,9 @@ class PhotoGridPlaceholder extends StatelessWidget {
   }
 }
 
-// A reusable widget to display a grid of actual photos.
+// A reusable widget to display a grid of actual photos (supports both Photo and PhotoMetadata).
 class PhotoGrid extends StatelessWidget {
-  final List<Photo> photos;
+  final List<dynamic> photos; // Can be List<Photo> or List<PhotoMetadata>
   final int crossAxisCount;
   final double crossAxisSpacing;
   final double mainAxisSpacing;
@@ -267,7 +376,7 @@ class PhotoGrid extends StatelessWidget {
 
 // A reusable grid item widget for displaying an actual photo.
 class PhotoGridItem extends StatelessWidget {
-  final Photo photo;
+  final dynamic photo; // Can be Photo or PhotoMetadata
   final double borderRadius;
 
   const PhotoGridItem({
@@ -279,18 +388,99 @@ class PhotoGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     try {
-      final bytes = base64Decode(photo.data);
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(borderRadius),
-          image: DecorationImage(
-            image: MemoryImage(bytes),
-            fit: BoxFit.cover,
+      Widget imageWidget;
+      final String? imagePath = photo.path;
+      final String? imageData = photo is Photo ? photo.data : null;
+
+      if (imagePath != null && imagePath.isNotEmpty) {
+        final file = File(imagePath);
+        if (file.existsSync()) {
+          // Use file-backed image
+          imageWidget = Image.file(file, fit: BoxFit.cover);
+        } else {
+          // File path exists but file not found - show placeholder
+          imageWidget = const Icon(
+            Icons.image_not_supported,
+            color: Colors.grey,
+          );
+        }
+      } else if (imageData != null && imageData.isNotEmpty) {
+        // Use base64-backed image for legacy items
+        try {
+          final bytes = base64Decode(imageData);
+          imageWidget = Image.memory(bytes, fit: BoxFit.cover);
+        } catch (e) {
+          // Fallback if base64 decode fails
+          imageWidget = const Icon(
+            Icons.broken_image,
+            color: Colors.grey,
+          );
+        }
+      } else {
+        // No path and no data - show placeholder
+        imageWidget = const Icon(
+          Icons.photo,
+          color: Colors.grey,
+        );
+      }
+
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Container(
+          color: Colors.grey[200],
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              imageWidget,
+              // Overlay with scan information if available
+              if (photo.disease != null && photo.disease!.isNotEmpty)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black.withOpacity(0.7), Colors.transparent],
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          photo.disease!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (photo.confidence != null)
+                          Text(
+                            '${(photo.confidence! * 100).round()}% confidence',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 8,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       );
     } catch (e) {
-      // Fallback to placeholder if decoding fails
+      // Fallback to placeholder if decoding or file loading fails
       return Container(
         decoration: BoxDecoration(
           color: Colors.grey[200],
