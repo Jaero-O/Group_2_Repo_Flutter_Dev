@@ -97,14 +97,7 @@ class PiApi {
     return ScanItem.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
 
-  Future<List<ScanItem>> getScansAll(String baseUrl, {PiQrEndpoints? endpoints}) async {
-    final ep = endpoints ?? const PiQrEndpoints();
-    final uri = _makeUri(baseUrl, ep.scansAllPath);
-    final resp = await http.get(uri).timeout(const Duration(seconds: 10));
-    if (resp.statusCode != 200) {
-      throw Exception('Failed to fetch all scans from Pi at $baseUrl (HTTP ${resp.statusCode}). Check that the Pi is running and the scans endpoint (${ep.scansAllPath}) is correct.');
-    }
-    final decoded = jsonDecode(resp.body);
+  List<Map<String, dynamic>> _extractScanMaps(dynamic decoded) {
     final List<dynamic> arr;
     if (decoded is List) {
       arr = decoded;
@@ -118,7 +111,131 @@ class PiApi {
     } else {
       arr = <dynamic>[];
     }
-    return arr.whereType<Map>().map((e) => ScanItem.fromJson(e.cast<String, dynamic>())).toList();
+    return arr.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+  }
+
+  Future<List<ScanItem>?> _getScansAllPaginated(
+    String baseUrl,
+    PiQrEndpoints ep,
+  ) async {
+    const int perPage = 250;
+    const int maxPages = 500;
+    const int pageConcurrency = 4;
+    final seenKeys = <String>{};
+    final collected = <Map<String, dynamic>>[];
+
+    Future<List<Map<String, dynamic>>?> fetchPageRows(int page) async {
+      final baseUri = _makeUri(baseUrl, ep.scansAllPath);
+      final uri = baseUri.replace(
+        queryParameters: {
+          ...baseUri.queryParameters,
+          'page': '$page',
+          'per_page': '$perPage',
+        },
+      );
+
+      final resp = await http.get(uri).timeout(const Duration(seconds: 20));
+      if (resp.statusCode != 200) return null;
+      final decoded = jsonDecode(resp.body);
+      return _extractScanMaps(decoded);
+    }
+
+    final firstPageRows = await fetchPageRows(1);
+    if (firstPageRows == null) return null;
+    if (firstPageRows.isEmpty) return <ScanItem>[];
+
+    int addedOnFirst = 0;
+    for (final row in firstPageRows) {
+      final id = row['id'] ?? row['database_id'];
+      final key = id != null
+          ? 'id:$id'
+          : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
+      if (seenKeys.add(key)) {
+        collected.add(row);
+        addedOnFirst++;
+      }
+    }
+    if (addedOnFirst == 0) {
+      return collected.map(ScanItem.fromJson).toList();
+    }
+    final actualPageSize = firstPageRows.length;
+
+    for (int startPage = 2; startPage <= maxPages; startPage += pageConcurrency) {
+      final pages = <int>[];
+      for (
+        int page = startPage;
+        page < startPage + pageConcurrency && page <= maxPages;
+        page++
+      ) {
+        pages.add(page);
+      }
+
+      final results = await Future.wait(
+        pages.map((page) async {
+          final rows = await fetchPageRows(page);
+          return (page: page, rows: rows);
+        }),
+      );
+
+      final sorted = [...results]..sort((a, b) => a.page.compareTo(b.page));
+      bool reachedTail = false;
+
+      for (final result in sorted) {
+        final pageRows = result.rows;
+        if (pageRows == null) {
+          return null;
+        }
+        if (pageRows.isEmpty) {
+          reachedTail = true;
+          break;
+        }
+
+        int added = 0;
+        for (final row in pageRows) {
+          final id = row['id'] ?? row['database_id'];
+          final key = id != null
+              ? 'id:$id'
+              : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
+          if (seenKeys.add(key)) {
+            collected.add(row);
+            added++;
+          }
+        }
+
+        // Server likely ignored pagination and returned repeated first page.
+        if (added == 0) {
+          reachedTail = true;
+          break;
+        }
+        if (pageRows.length < actualPageSize) {
+          reachedTail = true;
+          break;
+        }
+      }
+
+      if (reachedTail) break;
+    }
+
+    if (collected.isEmpty) return null;
+    return collected.map(ScanItem.fromJson).toList();
+  }
+
+  Future<List<ScanItem>> getScansAll(String baseUrl, {PiQrEndpoints? endpoints}) async {
+    final ep = endpoints ?? const PiQrEndpoints();
+    final paginated = await _getScansAllPaginated(baseUrl, ep);
+    if (paginated != null) {
+      return paginated;
+    }
+
+    final uri = _makeUri(baseUrl, ep.scansAllPath);
+    final resp = await http.get(uri).timeout(const Duration(seconds: 60));
+    if (resp.statusCode != 200) {
+      throw Exception('Failed to fetch all scans from Pi at $baseUrl (HTTP ${resp.statusCode}). Check that the Pi is running and the scans endpoint (${ep.scansAllPath}) is correct.');
+    }
+
+    final decoded = jsonDecode(resp.body);
+    final arr = _extractScanMaps(decoded);
+    return arr.map(ScanItem.fromJson).toList();
   }
 
   Future<List<ScanItem>> getScansSince(String baseUrl, String timestamp, {PiQrEndpoints? endpoints}) async {
@@ -201,6 +318,30 @@ class PiApi {
       fileName: 'pi_sync.db',
       timeout: const Duration(seconds: 120),
       retries: 2,
+    );
+  }
+
+  Future<String> downloadBulkImagesZip(
+    String baseUrl,
+    List<String> fileNames, {
+    required PiQrEndpoints endpoints,
+  }) async {
+    final filtered = fileNames
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList();
+    if (filtered.isEmpty) {
+      throw const FormatException('No filenames were provided for bulk image download.');
+    }
+
+    final path = endpoints.resolveBulkImagesZipPath(filtered);
+    return downloadFile(
+      baseUrl: baseUrl,
+      path: path,
+      fileName: 'images_bulk_${DateTime.now().millisecondsSinceEpoch}.zip',
+      timeout: const Duration(minutes: 5),
+      retries: 1,
     );
   }
 

@@ -8,6 +8,7 @@ import '../../services/sync_service.dart';
 import '../../services/local_db.dart';
 import '../../model/my_tree_model.dart';
 import '../../model/photo.dart';
+import '../../model/scan_item.dart';
 
 class GalleryPage extends StatefulWidget {
   final bool isSelectionMode;
@@ -26,6 +27,7 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> {
+  static const int _scanPageSize = 400;
   bool isPhotosView = true;
   final List<String> selectedImages = [];
   String? selectedAlbumTitle;
@@ -34,6 +36,9 @@ class _GalleryPageState extends State<GalleryPage> {
   int _activeLoadId = 0;
   bool _isLoadingData = false;
   bool _hasPendingReload = false;
+  int _offset = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   String _normalizeTimestamp(String raw, {String? fallbackRaw}) {
     final trimmed = raw.trim().isNotEmpty ? raw.trim() : (fallbackRaw ?? '').trim();
@@ -84,36 +89,25 @@ class _GalleryPageState extends State<GalleryPage> {
 
     _isLoadingData = true;
     final loadId = ++_activeLoadId;
+    _offset = 0;
+    _hasMore = true;
+    _isLoadingMore = false;
 
     try {
       final myTreesData = await LocalDb.instance.getAllMyTrees();
       final myTrees = myTreesData.map((map) => MyTree.fromMap(map)).toList();
 
-      final scans = await LocalDb.instance.getAllScans();
-      final List<PhotoMetadata> allPhotos = scans
+      final firstPage = await LocalDb.instance.getScansPage(
+        offset: 0,
+        limit: _scanPageSize,
+      );
+      final List<PhotoMetadata> allPhotos = firstPage
           .where(
             (scan) =>
                 scan.imagePath.trim().isNotEmpty ||
                 scan.imageUrl.trim().isNotEmpty,
           )
-          .map(
-            (scan) => PhotoMetadata(
-              id: scan.id,
-              name: scan.diseaseName.isNotEmpty ? scan.diseaseName : scan.title,
-              timestamp: _normalizeTimestamp(
-                scan.timestamp,
-                fallbackRaw: scan.updatedAt,
-              ),
-              path: scan.imagePath,
-              imageUrl: scan.imageUrl,
-              disease: scan.diseaseName.isNotEmpty ? scan.diseaseName : scan.disease,
-              severityLabel: scan.severityLevelName.isNotEmpty
-                  ? scan.severityLevelName
-                  : null,
-              confidence: scan.confidence,
-              severityValue: scan.severityValue,
-            ),
-          )
+          .map(_scanToPhotoMetadata)
           .toList();
 
       if (!mounted || loadId != _activeLoadId) return;
@@ -121,6 +115,8 @@ class _GalleryPageState extends State<GalleryPage> {
       setState(() {
         myTreesAlbums = myTrees;
         photos = allPhotos;
+        _offset = firstPage.length;
+        _hasMore = firstPage.length >= _scanPageSize;
       });
     } catch (_) {
       if (!mounted || loadId != _activeLoadId) return;
@@ -135,6 +131,77 @@ class _GalleryPageState extends State<GalleryPage> {
         _hasPendingReload = false;
         _loadData();
       }
+    }
+  }
+
+  PhotoMetadata _scanToPhotoMetadata(ScanItem scan) {
+    return PhotoMetadata(
+      id: scan.id,
+      name: scan.diseaseName.isNotEmpty ? scan.diseaseName : scan.title,
+      timestamp: _normalizeTimestamp(scan.timestamp, fallbackRaw: scan.updatedAt),
+      path: scan.imagePath,
+      imageUrl: scan.imageUrl,
+      disease: scan.diseaseName.isNotEmpty ? scan.diseaseName : scan.disease,
+      severityLabel: scan.severityLevelName.isNotEmpty
+          ? scan.severityLevelName
+          : null,
+      confidence: scan.confidence,
+      severityValue: scan.severityValue,
+    );
+  }
+
+  Future<void> _loadMorePhotos() async {
+    if (_isLoadingMore || !_hasMore || !mounted || _isLoadingData) {
+      return;
+    }
+
+    final capturedLoadId = _activeLoadId;
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final page = await LocalDb.instance.getScansPage(
+        offset: _offset,
+        limit: _scanPageSize,
+      );
+
+      if (!mounted || _activeLoadId != capturedLoadId) {
+        if (mounted) {
+          setState(() {
+            _isLoadingMore = false;
+          });
+        }
+        return;
+      }
+
+      final newPhotos = page
+          .where(
+            (scan) =>
+                scan.imagePath.trim().isNotEmpty ||
+                scan.imageUrl.trim().isNotEmpty,
+          )
+          .map(_scanToPhotoMetadata)
+          .toList();
+
+      setState(() {
+        photos.addAll(newPhotos);
+        _offset += page.length;
+        _hasMore = page.length >= _scanPageSize;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || _activeLoadId != capturedLoadId) {
+        if (mounted) {
+          setState(() {
+            _isLoadingMore = false;
+          });
+        }
+        return;
+      }
+      setState(() {
+        _isLoadingMore = false;
+      });
     }
   }
 
@@ -188,28 +255,46 @@ class _GalleryPageState extends State<GalleryPage> {
     String albumName,
     List<String> selectedImageIds,
   ) async {
-    await LocalDb.instance.insertMyTree(
-      title: albumName,
-      location: 'New Album Location',
-      images: selectedImageIds.join(','),
-    );
-    await _loadData();
-    if (!mounted) return;
-    _showNotification('Tree "$albumName" created successfully!');
+    try {
+      await LocalDb.instance.insertMyTree(
+        title: albumName,
+        location: 'New Album Location',
+        images: selectedImageIds.join(','),
+      );
+      await _loadData();
+      if (!mounted) return;
+      _showNotification('Tree "$albumName" created successfully!');
+    } catch (_) {
+      if (!mounted) return;
+      _showNotification(
+        'Could not create tree. Please try a different name.',
+        isDelete: true,
+      );
+    }
   }
 
   void _handleAlbumNameUpdate(String oldName, String newName) async {
-    await LocalDb.instance.updateMyTreeTitle(oldName, newName);
-    await _loadData();
-    if (!mounted) return;
-    _showNotification('Tree renamed to "$newName"');
+    try {
+      await LocalDb.instance.updateMyTreeTitle(oldName, newName);
+      await _loadData();
+      if (!mounted) return;
+      _showNotification('Tree renamed to "$newName"');
+    } catch (_) {
+      if (!mounted) return;
+      _showNotification('Could not rename tree.', isDelete: true);
+    }
   }
 
   void _handleAlbumDeletion(String albumName) async {
-    await LocalDb.instance.deleteMyTreeByTitle(albumName);
-    await _loadData();
-    if (!mounted) return;
-    _showNotification('Tree "$albumName" deleted.', isDelete: true);
+    try {
+      await LocalDb.instance.deleteMyTreeByTitle(albumName);
+      await _loadData();
+      if (!mounted) return;
+      _showNotification('Tree "$albumName" deleted.', isDelete: true);
+    } catch (_) {
+      if (!mounted) return;
+      _showNotification('Could not delete tree.', isDelete: true);
+    }
   }
 
   void _handlePhotoLongPress(String imageId) {
@@ -241,9 +326,7 @@ class _GalleryPageState extends State<GalleryPage> {
                     oldId,
                     newName,
                   ) {
-                    setState(() {
-                      _showNotification('Photo renamed to "$newName"');
-                    });
+                    _showNotification('Photo renamed to "$newName"');
                   });
                 },
               ),
@@ -427,7 +510,11 @@ class _GalleryPageState extends State<GalleryPage> {
     };
     if (!widget.isSelectionMode) {
       return isPhotosView
-          ? PhotosView(onPhotoLongPress: _handlePhotoLongPress, photos: photos)
+          ? PhotosView(
+              onPhotoLongPress: _handlePhotoLongPress,
+              photos: photos,
+              isLoadingMore: _isLoadingMore && _hasMore,
+            )
           : MyTreesPage(
               albums: myTreesAlbums,
               onAlbumLongPress: _handleAlbumLongPress,
@@ -546,7 +633,20 @@ class _GalleryPageState extends State<GalleryPage> {
               ]
             : null,
       ),
-      body: Stack(children: [_buildBodyContent(), _buildSelectedCountChip()]),
+      body: Stack(
+        children: [
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (isPhotosView && notification.metrics.extentAfter < 600) {
+                _loadMorePhotos();
+              }
+              return false;
+            },
+            child: _buildBodyContent(),
+          ),
+          _buildSelectedCountChip(),
+        ],
+      ),
       bottomNavigationBar: widget.isSelectionMode
           ? Padding(
               padding: const EdgeInsets.all(16),

@@ -51,7 +51,10 @@ class _ScanPageState extends State<ScanPage> {
   String _normalizeSeverityLabel(String raw) {
     final value = raw.trim().toLowerCase();
     if (value.isEmpty) return '';
+    if (value == 'none') return '';
     if (value.contains('healthy')) return 'Healthy';
+    if (value == 'high') return 'Advanced Stage';
+    if (value == 'low' || value == 'trace') return 'Early Stage';
     if (value.contains('advanced') ||
         value.contains('severe') ||
         value.contains('critical')) {
@@ -83,19 +86,29 @@ class _ScanPageState extends State<ScanPage> {
 
   String _statusFor(ScanItem item) {
     final level = _normalizeSeverityLabel(item.severityLevelName);
-    if (level.isNotEmpty) return level;
-    if (_displayDiseaseName(item).toLowerCase() == 'healthy') return 'Healthy';
+    const knownStatuses = {'Healthy', 'Early Stage', 'Advanced Stage'};
+    if (level.isNotEmpty && knownStatuses.contains(level)) return level;
+    final disease = _displayDiseaseName(item).toLowerCase();
+    if (disease == 'healthy') return 'Healthy';
 
     final v = item.severityValue;
     if (v > 40.0) return 'Advanced Stage';
     if (v > 5.0) return 'Early Stage';
+
+    // Pi imports can mark a disease while leaving computed severity at 0.
+    if (disease.isNotEmpty && disease != 'healthy' && disease != 'unknown disease') {
+      return 'Early Stage';
+    }
+
     return 'Healthy';
   }
 
   bool _isGenericDetectionLabel(String value) {
     final normalized = value.trim().toLowerCase();
     if (normalized.isEmpty) return true;
-    return normalized == 'image detected' ||
+    return normalized == 'imported dataset' ||
+      normalized == 'dataset' ||
+      normalized == 'image detected' ||
         normalized == 'imported dataset detected' ||
         normalized == 'dataset detected';
   }

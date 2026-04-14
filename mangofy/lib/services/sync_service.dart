@@ -46,8 +46,9 @@ class SyncService {
   );
 
   static const _lastSyncKey = 'pi_sync_last_sync_at';
-  static const int _imageHydrationConcurrency = 4;
-  static const int _imageImportConcurrency = 4;
+  static const int _imageHydrationConcurrency = 12;
+  static const int _imageImportConcurrency = 12;
+  static const int _bulkZipFileChunkSize = 120;
 
   Future<DateTime?> _getLastSyncAt() async {
     final prefs = await SharedPreferences.getInstance();
@@ -77,9 +78,19 @@ class SyncService {
         scans.addAll(await PiApi.instance.getScansAll(PiApi.defaultBaseUrl));
       }
     } catch (_) {
-      scans.addAll(await PiApi.instance.getScansAll(PiApi.defaultBaseUrl));
+      try {
+        scans.addAll(await PiApi.instance.getScansAll(PiApi.defaultBaseUrl));
+      } catch (e) {
+        progressNotifier.value = null;
+        rethrow;
+      }
     }
-    await _processScans(scans);
+    try {
+      await _processScans(scans);
+    } catch (e) {
+      progressNotifier.value = null;
+      rethrow;
+    }
   }
 
   Future<bool> syncFromPi(PiQrData data) async {
@@ -177,49 +188,67 @@ class SyncService {
 
     List<ScanItem> scans;
     bool fetchSuccess = false;
-    try {
-      final lastSyncAt = await _getLastSyncAt();
-      if (lastSyncAt != null) {
-        scans = await PiApi.instance.getScansSince(
-          accessUrl,
-          lastSyncAt.toIso8601String(),
-          endpoints: endpoints,
-        );
-        // If incremental fetch returns suspiciously empty, force full sync for Kivy parity
-        if (scans.isEmpty) {
-          debugPrint(
-            'Incremental sync returned no scans; falling back to full sync.',
-          );
-          scans = await PiApi.instance.getScansAll(
-            accessUrl,
-            endpoints: endpoints,
-          );
-        }
-      } else {
-        scans = await PiApi.instance.getScansAll(
-          accessUrl,
-          endpoints: endpoints,
-        );
-      }
 
-      diagnostics.scansFetched = scans.length;
-      await _processScans(scans, baseUrl: accessUrl, endpoints: endpoints);
-      fetchSuccess = true;
-    } catch (e) {
-      progressNotifier.value = null; // Clear progress on error
-      // If this Pi setup prefers DB download/import over scan endpoints, fall back when provided.
-      if (endpoints.dbDownloadPath != null &&
-          endpoints.dbDownloadPath!.isNotEmpty) {
+    if (endpoints.dbDownloadPath != null &&
+        endpoints.dbDownloadPath!.isNotEmpty) {
+      try {
+        progressNotifier.value = const SyncProgress(
+          stage: 'Importing',
+          completedUnits: 0,
+          totalUnits: 1,
+          message: 'Downloading full Pi database…',
+        );
         final downloadedDbPath = await PiApi.instance.downloadDatabase(
           accessUrl,
           endpoints: endpoints,
+        );
+        progressNotifier.value = const SyncProgress(
+          stage: 'Importing',
+          completedUnits: 1,
+          totalUnits: 1,
+          message: 'Database downloaded. Importing records…',
         );
         await LocalDb.instance.replaceDatabaseFromFile(downloadedDbPath);
         await _normalizeImportedImagePaths();
         await _hydrateImportedScanImages(accessUrl, endpoints, diagnostics);
         usedDbImportFallback = true;
         fetchSuccess = true;
-      } else {
+      } catch (dbErr) {
+        debugPrint('DB import failed, falling back to JSON API: $dbErr');
+      }
+    }
+
+    if (!fetchSuccess) {
+      try {
+        final lastSyncAt = await _getLastSyncAt();
+        if (lastSyncAt != null) {
+          scans = await PiApi.instance.getScansSince(
+            accessUrl,
+            lastSyncAt.toIso8601String(),
+            endpoints: endpoints,
+          );
+          // If incremental fetch returns suspiciously empty, force full sync for Kivy parity
+          if (scans.isEmpty) {
+            debugPrint(
+              'Incremental sync returned no scans; falling back to full sync.',
+            );
+            scans = await PiApi.instance.getScansAll(
+              accessUrl,
+              endpoints: endpoints,
+            );
+          }
+        } else {
+          scans = await PiApi.instance.getScansAll(
+            accessUrl,
+            endpoints: endpoints,
+          );
+        }
+
+        diagnostics.scansFetched = scans.length;
+        await _processScans(scans, baseUrl: accessUrl, endpoints: endpoints);
+        fetchSuccess = true;
+      } catch (_) {
+        progressNotifier.value = null;
         rethrow;
       }
     }
@@ -309,6 +338,7 @@ class SyncService {
     await photosDir.create(recursive: true);
 
     final importable = await LocalDb.instance.getImportableScanImages();
+    final photoRows = <Map<String, dynamic>>[];
     for (final row in importable) {
       final scanId = row['id'] as int;
       final timestamp = row['scan_timestamp'] as String;
@@ -341,32 +371,26 @@ class SyncService {
       await LocalDb.instance.updateScanImagePath(scanId, updatedImagePath);
 
       final photoName = disease.isNotEmpty ? disease : 'Scan $scanId';
-      final photoTimestamp = timestamp;
-
-      int? existingPhotoId = await LocalDb.instance.getPhotoIdByNameTimestamp(
-        photoName,
-        photoTimestamp,
-      );
-      if (existingPhotoId == null) {
-        existingPhotoId = await LocalDb.instance.insertPhoto(
-          name: photoName,
-          data: '',
-          path: updatedImagePath,
-          timestamp: photoTimestamp,
-          title: title,
-          description: description,
-          imageUrl: imageUrl,
-          checksum: checksum,
-          source: source,
-          updatedAt: updatedAt,
-          disease: disease,
-          confidence: confidence,
-          severityValue: severityValue,
-          photoId: photoId,
-          scanDir: scanDir,
-        );
-      }
+      photoRows.add({
+        'name': photoName,
+        'data': '',
+        'path': updatedImagePath,
+        'timestamp': timestamp,
+        'title': title,
+        'description': description,
+        'image_url': imageUrl,
+        'checksum': checksum,
+        'source': source,
+        'updated_at': updatedAt,
+        'disease': disease,
+        'confidence': confidence,
+        'severity_value': severityValue,
+        'photo_id': photoId,
+        'scan_dir': scanDir,
+      });
     }
+
+    await LocalDb.instance.batchUpsertPhotos(photoRows);
   }
 
   Future<void> _normalizeImportedImagePaths() async {
@@ -375,16 +399,18 @@ class SyncService {
     await photosDir.create(recursive: true);
     final importable = await LocalDb.instance.getScanImageCandidates();
 
-    for (final row in importable) {
+    await Future.wait(importable.map((row) async {
       final scanId = row['id'] as int;
       final imagePath = row['image_path'] as String? ?? '';
-      if (imagePath.isEmpty) continue;
+      final imageUrl = row['image_url'] as String? ?? '';
+      final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
+      if (imageRef.isEmpty) return;
 
       final existing = File(imagePath);
-      if (await existing.exists()) continue;
+      if (await existing.exists()) return;
 
-      final fileName = imagePath.split(RegExp(r'[\\/]+')).last;
-      if (fileName.isEmpty) continue;
+      final fileName = _extractImageFileName(imageRef) ?? '';
+      if (fileName.isEmpty) return;
 
       final candidate = File('${docs.path}/$fileName');
       final candidateInPhotos = File(join(photosDir.path, fileName));
@@ -393,7 +419,7 @@ class SyncService {
       } else if (await candidate.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, candidate.path);
       }
-    }
+    }));
   }
 
   Future<void> _hydrateImportedScanImages(
@@ -408,30 +434,55 @@ class SyncService {
     final importable = await LocalDb.instance.getScanImageCandidates();
 
     final pending = <Map<String, dynamic>>[];
-    for (final row in importable) {
+    final pendingCandidates = await Future.wait(
+      importable.map((row) async {
       final scanId = row['id'] as int;
       final imagePath = row['image_path'] as String? ?? '';
-      if (imagePath.isEmpty) continue;
+      final imageUrl = row['image_url'] as String? ?? '';
+      final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
+      if (imageRef.isEmpty) return null;
 
       final existing = File(imagePath);
-      if (await existing.exists()) continue;
+      if (await existing.exists()) return null;
 
-      final fileName = basename(imagePath);
-      if (fileName.isEmpty) continue;
+      final fileName = _extractImageFileName(imageRef) ?? '';
+      if (fileName.isEmpty) return null;
 
       final inPhotos = File(join(photosDir.path, fileName));
       if (await inPhotos.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, inPhotos.path);
-        continue;
+        return null;
       }
 
       final inDocs = File(join(docs.path, fileName));
       if (await inDocs.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, inDocs.path);
-        continue;
+        return null;
       }
 
-      pending.add({'scanId': scanId, 'fileName': fileName});
+      return {'scanId': scanId, 'fileName': fileName};
+      }),
+    );
+    pending.addAll(pendingCandidates.whereType<Map<String, dynamic>>());
+
+    if (pending.isEmpty) return;
+
+    final bulkHydratedPaths = await _downloadBulkImagePaths(
+      baseUrl: baseUrl,
+      endpoints: endpoints,
+      pending: pending,
+      diagnostics: diagnostics,
+      bundlePrefix: 'imported_images',
+    );
+    if (bulkHydratedPaths.isNotEmpty) {
+      await Future.wait(
+        bulkHydratedPaths.entries.map(
+          (entry) => LocalDb.instance.updateScanImagePath(entry.key, entry.value),
+        ),
+      );
+      pending.removeWhere(
+        (item) => bulkHydratedPaths.containsKey(item['scanId'] as int),
+      );
     }
 
     if (pending.isEmpty) return;
@@ -520,17 +571,45 @@ class SyncService {
     await photosDir.create(recursive: true);
 
     final scansWithImages = scans.where((s) => s.imageUrl.isNotEmpty).toList();
+    final pendingForBulk = <Map<String, dynamic>>[];
+    for (final scan in scansWithImages) {
+      final fileName = _extractImageFileName(scan.imageUrl);
+      if (fileName == null || fileName.isEmpty) continue;
+      pendingForBulk.add({'scanId': scan.id, 'fileName': fileName});
+    }
+
+    final bulkDownloadedPaths = await _downloadBulkImagePaths(
+      baseUrl: baseUrl ?? PiApi.defaultBaseUrl,
+      endpoints: endpoints,
+      pending: pendingForBulk,
+      diagnostics: diagnostics,
+      bundlePrefix: 'scan_images',
+    );
+
+    if (bulkDownloadedPaths.isNotEmpty) {
+      await Future.wait(
+        bulkDownloadedPaths.entries.map(
+          (entry) => LocalDb.instance.updateScanImagePath(entry.key, entry.value),
+        ),
+      );
+    }
+
     int processedImageUnits = 0;
 
     Future<void> processImage(ScanItem remote) async {
       diagnostics.imagesAttempted++;
       try {
-        final localPath = await PiApi.instance.downloadImage(
-          remote,
-          baseUrl ?? PiApi.defaultBaseUrl,
-          endpoints: endpoints,
-        );
-        diagnostics.imagesDownloaded++;
+        final preDownloadedPath = bulkDownloadedPaths[remote.id];
+        final localPath =
+            preDownloadedPath ??
+            await PiApi.instance.downloadImage(
+              remote,
+              baseUrl ?? PiApi.defaultBaseUrl,
+              endpoints: endpoints,
+            );
+        if (preDownloadedPath == null) {
+          diagnostics.imagesDownloaded++;
+        }
 
         final fileName = basename(localPath);
         final permanentPath = join(photosDir.path, fileName);
@@ -630,5 +709,79 @@ class SyncService {
       message: message,
     );
     diagnosticsNotifier.value = diagnostics;
+  }
+
+  String? _extractImageFileName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.pathSegments.isNotEmpty) {
+      final last = uri.pathSegments.last.trim();
+      if (last.isNotEmpty) return last;
+    }
+
+    final fileName = basename(trimmed);
+    return fileName.isEmpty ? null : fileName;
+  }
+
+  Future<Map<int, String>> _downloadBulkImagePaths({
+    required String baseUrl,
+    required PiQrEndpoints? endpoints,
+    required List<Map<String, dynamic>> pending,
+    required SyncDiagnostics diagnostics,
+    required String bundlePrefix,
+  }) async {
+    final resolvedEndpoints = endpoints ?? const PiQrEndpoints();
+    if (pending.isEmpty ||
+        resolvedEndpoints.bulkImagesZipPath == null ||
+        resolvedEndpoints.bulkImagesZipPath!.isEmpty) {
+      return <int, String>{};
+    }
+
+    final result = <int, String>{};
+    for (int i = 0; i < pending.length; i += _bulkZipFileChunkSize) {
+      final chunk = pending.sublist(
+        i,
+        (i + _bulkZipFileChunkSize) > pending.length
+            ? pending.length
+            : (i + _bulkZipFileChunkSize),
+      );
+      final fileNames = chunk
+          .map((item) => (item['fileName'] as String).trim())
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList();
+      if (fileNames.isEmpty) continue;
+
+      try {
+        diagnostics.imagesAttempted += chunk.length;
+        final zipPath = await PiApi.instance.downloadBulkImagesZip(
+          baseUrl,
+          fileNames,
+          endpoints: resolvedEndpoints,
+        );
+        final extractedDir = await PiBundleService.instance.extractZipBundle(
+          zipPath: zipPath,
+          scanId: '${bundlePrefix}_${DateTime.now().millisecondsSinceEpoch}_$i',
+        );
+
+        for (final item in chunk) {
+          final scanId = item['scanId'] as int;
+          final fileName = item['fileName'] as String;
+          final extractedPath = join(extractedDir, fileName);
+          final extractedFile = File(extractedPath);
+          if (await extractedFile.exists()) {
+            result[scanId] = extractedPath;
+            diagnostics.imagesDownloaded++;
+          }
+        }
+      } catch (e) {
+        // Fallback to per-image download when bulk endpoint is unavailable.
+        debugPrint('Bulk image zip unavailable for chunk at $i: $e');
+      }
+    }
+
+    return result;
   }
 }

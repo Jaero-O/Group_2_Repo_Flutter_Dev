@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class OutbreakPredictionCard extends StatelessWidget {
   final String insightText;
   final List<double>? weeklyData;
+  final List<String>? weekLabels;
   final int? peakOverride;
   final int? latestOverride;
 
@@ -11,6 +12,7 @@ class OutbreakPredictionCard extends StatelessWidget {
     this.insightText =
         'Scan a leaf to build a weekly trend for outbreak prediction.',
     this.weeklyData,
+    this.weekLabels,
     this.peakOverride,
     this.latestOverride,
   });
@@ -18,6 +20,7 @@ class OutbreakPredictionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<double> data = weeklyData ?? [];
+    final List<String> labels = weekLabels ?? const [];
 
     final int peak = peakOverride ??
         (data.isEmpty ? 0 : data.reduce((a, b) => a > b ? a : b).toInt());
@@ -91,6 +94,29 @@ class OutbreakPredictionCard extends StatelessWidget {
                         painter: _BarChartPainter(data: data),
                       ),
                     ),
+
+                    if (labels.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            labels.first,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          Text(
+                            labels.last,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

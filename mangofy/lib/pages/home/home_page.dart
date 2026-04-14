@@ -20,8 +20,10 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<ScanSummary> _summaryFuture;
   late Future<List<DiseaseData>> _distributionFuture;
-  late Future<List<double>> _trendFuture;
+  late Future<List<Map<String, dynamic>>> _trendFuture;
   late Future<String> _primaryDiseaseFuture;
+  late Future<String?> _latestScanDateFuture;
+  late Future<Map<String, int>> _rowCompletenessFuture;
   bool _isRefreshing = false;
   bool _hasPendingRefresh = false;
 
@@ -30,8 +32,10 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _summaryFuture = LocalDb.instance.getScanSummary();
     _distributionFuture = _loadDiseaseDistribution();
-    _trendFuture = LocalDb.instance.getWeeklyTrend();
+    _trendFuture = LocalDb.instance.getWeeklyTrendSeries();
     _primaryDiseaseFuture = LocalDb.instance.getPrimaryDiseaseName();
+    _latestScanDateFuture = LocalDb.instance.getLatestScanDate();
+    _rowCompletenessFuture = LocalDb.instance.getScanRowCompleteness();
     SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
   }
 
@@ -74,8 +78,10 @@ class _HomePageState extends State<HomePage> {
     try {
       final summaryFuture = LocalDb.instance.getScanSummary();
       final distributionFuture = _loadDiseaseDistribution();
-      final trendFuture = LocalDb.instance.getWeeklyTrend();
+      final trendFuture = LocalDb.instance.getWeeklyTrendSeries();
       final primaryDiseaseFuture = LocalDb.instance.getPrimaryDiseaseName();
+      final latestScanDateFuture = LocalDb.instance.getLatestScanDate();
+      final rowCompletenessFuture = LocalDb.instance.getScanRowCompleteness();
 
       if (mounted) {
         setState(() {
@@ -83,6 +89,8 @@ class _HomePageState extends State<HomePage> {
           _distributionFuture = distributionFuture;
           _trendFuture = trendFuture;
           _primaryDiseaseFuture = primaryDiseaseFuture;
+          _latestScanDateFuture = latestScanDateFuture;
+          _rowCompletenessFuture = rowCompletenessFuture;
         });
       }
 
@@ -91,6 +99,8 @@ class _HomePageState extends State<HomePage> {
         distributionFuture,
         trendFuture,
         primaryDiseaseFuture,
+        latestScanDateFuture,
+        rowCompletenessFuture,
       ], eagerError: false);
     } finally {
       _isRefreshing = false;
@@ -99,6 +109,28 @@ class _HomePageState extends State<HomePage> {
         _refresh();
       }
     }
+  }
+
+  String _formatLatestScanDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'No scans yet';
+    final parsed = DateTime.tryParse(raw.replaceFirst(' ', 'T'));
+    if (parsed == null) return raw;
+    final local = parsed.toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[local.month - 1]} ${local.day}, ${local.year}';
   }
 
   Future<List<DiseaseData>> _loadDiseaseDistribution() async {
@@ -235,6 +267,40 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
 
+                        FutureBuilder<String?>(
+                          future: _latestScanDateFuture,
+                          builder: (context, latestSnapshot) {
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 8, right: 8),
+                              child: Text(
+                                'Last scan: ${_formatLatestScanDate(latestSnapshot.data)}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                        FutureBuilder<Map<String, int>>(
+                          future: _rowCompletenessFuture,
+                          builder: (context, qualitySnapshot) {
+                            final data = qualitySnapshot.data;
+                            final incomplete = data?['incomplete'] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 8, right: 8, top: 2),
+                              child: Text(
+                                'Rows with missing key fields: $incomplete',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black45,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
                         const SizedBox(height: 12),
 
                         // Primary Threat Card
@@ -295,12 +361,22 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 30),
 
                         // Outbreak Prediction Card (Title moved outside within the widget)
-                        FutureBuilder<List<double>>(
+                        FutureBuilder<List<Map<String, dynamic>>>(
                           future: _trendFuture,
                           builder: (context, trendSnapshot) {
-                            final trendData = trendSnapshot.data ?? [];
+                            final trendSeries = trendSnapshot.data ?? [];
+                            final trendData = trendSeries
+                                .map(
+                                  (row) =>
+                                      ((row['count'] as int?) ?? 0).toDouble(),
+                                )
+                                .toList();
+                            final trendLabels = trendSeries
+                                .map((row) => row['label']?.toString() ?? '')
+                                .toList();
                             return OutbreakPredictionCard(
                               weeklyData: trendData,
+                              weekLabels: trendLabels,
                             );
                           },
                         ),

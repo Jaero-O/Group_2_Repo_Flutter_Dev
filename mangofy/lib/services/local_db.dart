@@ -348,11 +348,24 @@ class LocalDb {
     }
     await tmpFile.rename(destPath);
 
-    // Sanity check: ensure expected tables and columns exist.
+    // Sanity check + compatibility patching for Pi-provided databases.
     try {
-      final db = await openDatabase(destPath, readOnly: true);
+      final db = await openDatabase(destPath);
       try {
-        // Check required tables
+        Future<bool> hasTable(String tableName) async {
+          final rows = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+            [tableName],
+          );
+          return rows.isNotEmpty;
+        }
+
+        Future<Set<String>> getTableColumns(String tableName) async {
+          final rows = await db.rawQuery('PRAGMA table_info($tableName)');
+          return rows.map((row) => row['name'] as String).toSet();
+        }
+
+        // Check required tables.
         final requiredTables = [
           'tbl_tree',
           'tbl_disease',
@@ -360,22 +373,52 @@ class LocalDb {
           'tbl_scan_record',
         ];
         for (final table in requiredTables) {
-          final rows = await db.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            [table],
-          );
-          if (rows.isEmpty) {
+          if (!await hasTable(table)) {
             throw Exception('Imported DB missing required table: $table');
           }
         }
 
-        // Check essential columns in tbl_scan_record
-        final scanColumns = await db.rawQuery(
-          "PRAGMA table_info(tbl_scan_record)",
-        );
-        final columnNames = scanColumns
-            .map((row) => row['name'] as String)
-            .toSet();
+        // Patch app-only tables that do not exist in Pi DB exports.
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS tbl_photos(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            data TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            path TEXT,
+            title TEXT,
+            description TEXT,
+            image_url TEXT,
+            checksum TEXT,
+            source TEXT,
+            updated_at TEXT,
+            disease TEXT,
+            confidence REAL,
+            severity_value REAL,
+            photo_id INTEGER,
+            scan_dir TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS tbl_my_trees(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL UNIQUE,
+            location TEXT,
+            images TEXT,
+            cover_image TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS tbl_dataset_folders(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            images TEXT NOT NULL,
+            date_created TEXT NOT NULL
+          )
+        ''');
+
+        // Check essential columns in tbl_scan_record.
+        final scanColumnNames = await getTableColumns('tbl_scan_record');
         final requiredScanColumns = {
           'id',
           'scan_timestamp',
@@ -386,13 +429,36 @@ class LocalDb {
           'severity_level_id',
           'confidence_score',
           'severity_percentage',
-          'is_archived',
         };
-        if (!requiredScanColumns.every(columnNames.contains)) {
+        if (!requiredScanColumns.every(scanColumnNames.contains)) {
           throw Exception(
-            'Imported DB tbl_scan_record missing essential columns: ${requiredScanColumns.where((c) => !columnNames.contains(c)).join(', ')}',
+            'Imported DB tbl_scan_record missing essential columns: ${requiredScanColumns.where((c) => !scanColumnNames.contains(c)).join(', ')}',
           );
         }
+
+        // App-side compatibility column used by queries and indexes.
+        if (!scanColumnNames.contains('is_archived')) {
+          await db.execute(
+            'ALTER TABLE tbl_scan_record ADD COLUMN is_archived INTEGER DEFAULT 0',
+          );
+        }
+        await db.execute(
+          'UPDATE tbl_scan_record SET is_archived = 0 WHERE is_archived IS NULL',
+        );
+
+        // Ensure import/read-path indexes exist in imported DBs.
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_scan_archived ON tbl_scan_record(is_archived)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_scan_archived_timestamp ON tbl_scan_record(is_archived, scan_timestamp DESC)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_photos_photo_id ON tbl_photos(photo_id)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_photos_name_timestamp ON tbl_photos(name, timestamp)',
+        );
       } finally {
         await db.close();
       }
@@ -414,10 +480,25 @@ class LocalDb {
     }
   }
 
+  bool _isGenericDiseaseLabel(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return true;
+    return normalized == 'imported dataset' ||
+        normalized == 'dataset' ||
+        normalized == 'image detected' ||
+        normalized == 'imported dataset detected' ||
+        normalized == 'dataset detected';
+  }
+
   String _resolvedDiseaseName(ScanItem item) {
-    if (item.diseaseName.trim().isNotEmpty) return item.diseaseName.trim();
-    if (item.disease.trim().isNotEmpty) return item.disease.trim();
-    if (item.title.trim().isNotEmpty) return item.title.trim();
+    final canonical = item.diseaseName.trim();
+    if (canonical.isNotEmpty && !_isGenericDiseaseLabel(canonical)) {
+      return canonical;
+    }
+    final fallback = item.disease.trim();
+    if (fallback.isNotEmpty && !_isGenericDiseaseLabel(fallback)) {
+      return fallback;
+    }
     return '';
   }
 
@@ -430,6 +511,8 @@ class LocalDb {
     if (disease == 'healthy') return 'Healthy';
     if (item.severityValue > 40.0) return 'Advanced Stage';
     if (item.severityValue > 5.0) return 'Early Stage';
+    // Disease can be present while Pi reports severity_percentage=0.0.
+    if (disease.isNotEmpty) return 'Early Stage';
     return 'Healthy';
   }
 
@@ -540,8 +623,12 @@ class LocalDb {
       SELECT r.*, t.name as tree_name, t.location as tree_location, t.variety as tree_variety,
              d.name as disease_name, d.description as disease_description, d.symptoms as disease_symptoms, d.prevention as disease_prevention,
             s.name as severity_name, s.description as severity_description,
-        COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), '') as resolved_disease,
-            COALESCE(NULLIF(TRIM(r.severity_level), ''), NULLIF(TRIM(s.name), ''), '') as resolved_severity_name,
+        CASE
+          WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+          WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+          ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+        END as resolved_disease,
+            COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
             COALESCE(
               NULLIF(TRIM(r.image_path), ''),
               NULLIF(TRIM(r.thumbnail_path), ''),
@@ -577,41 +664,93 @@ class LocalDb {
       ) DESC,
       r.id DESC
     ''');
-    return rows
-        .map(
-          (row) => ScanItem(
-            id: row['id'] as int,
-            title: row['resolved_disease'] as String? ?? '',
-            description: '',
-            timestamp: row['scan_timestamp'] as String? ?? '',
-            imagePath: row['resolved_image_path'] as String? ?? '',
-            imageUrl: row['resolved_image_url'] as String? ?? '',
-            checksum: '',
-            source: row['source'] as String? ?? '',
-            updatedAt: row['analysis_updated_at'] as String? ?? '',
-            disease: row['resolved_disease'] as String? ?? '',
-            diseaseClass: row['disease_class'] as String? ?? '',
-            confidence: (row['confidence_score'] as num?)?.toDouble() ?? 0.0,
-            severityValue:
-                (row['severity_percentage'] as num?)?.toDouble() ?? 0.0,
-            photoId: null, // No photo_id in new schema
-            scanDir: '',
-            treeId: row['tree_id'] as int?,
-            treeName: row['tree_name'] as String? ?? '',
-            treeLocation: row['tree_location'] as String? ?? '',
-            treeVariety: row['tree_variety'] as String? ?? '',
-            diseaseId: row['disease_id'] as int?,
-            diseaseName: row['disease_name'] as String? ?? '',
-            diseaseDescription: row['disease_description'] as String? ?? '',
-            diseaseSymptoms: row['disease_symptoms'] as String? ?? '',
-            diseasePrevention: row['disease_prevention'] as String? ?? '',
-            severityLevelId: row['severity_level_id'] as int?,
-            severityLevelName: row['resolved_severity_name'] as String? ?? '',
-            severityLevelDescription:
-                row['severity_description'] as String? ?? '',
-          ),
-        )
-        .toList();
+    return rows.map(_scanItemFromRow).toList();
+  }
+
+  Future<List<ScanItem>> getScansPage({
+    required int offset,
+    required int limit,
+  }) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT r.*, t.name as tree_name, t.location as tree_location, t.variety as tree_variety,
+             d.name as disease_name, d.description as disease_description, d.symptoms as disease_symptoms, d.prevention as disease_prevention,
+            s.name as severity_name, s.description as severity_description,
+        CASE
+          WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+          WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+          ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+        END as resolved_disease,
+            COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
+            COALESCE(
+              NULLIF(TRIM(r.image_path), ''),
+              NULLIF(TRIM(r.thumbnail_path), ''),
+              NULLIF(TRIM((
+                SELECT p.path
+                FROM tbl_photos p
+                WHERE (p.photo_id = r.id OR p.id = r.id)
+                  AND p.path IS NOT NULL
+                  AND TRIM(p.path) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), '')
+            ) as resolved_image_path,
+            COALESCE(
+              NULLIF(TRIM((
+                SELECT p.image_url
+                FROM tbl_photos p
+                WHERE (p.photo_id = r.id OR p.id = r.id)
+                  AND p.image_url IS NOT NULL
+                  AND TRIM(p.image_url) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), ''),
+              ''
+            ) as resolved_image_url
+      FROM tbl_scan_record r
+      LEFT JOIN tbl_tree t ON r.tree_id = t.id
+      LEFT JOIN tbl_disease d ON r.disease_id = d.id
+      LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+      ORDER BY COALESCE(
+        datetime(replace(replace(substr(r.scan_timestamp, 1, 19), 'T', ' '), 'Z', '')),
+        r.scan_timestamp
+      ) DESC,
+      r.id DESC
+      LIMIT ? OFFSET ?
+    ''', [limit, offset]);
+    return rows.map(_scanItemFromRow).toList();
+  }
+
+  ScanItem _scanItemFromRow(Map<String, Object?> row) {
+    return ScanItem(
+      id: row['id'] as int,
+      title: row['resolved_disease'] as String? ?? '',
+      description: '',
+      timestamp: row['scan_timestamp'] as String? ?? '',
+      imagePath: row['resolved_image_path'] as String? ?? '',
+      imageUrl: row['resolved_image_url'] as String? ?? '',
+      checksum: '',
+      source: row['source'] as String? ?? '',
+      updatedAt: row['analysis_updated_at'] as String? ?? '',
+      disease: row['resolved_disease'] as String? ?? '',
+      diseaseClass: row['disease_class'] as String? ?? '',
+      confidence: (row['confidence_score'] as num?)?.toDouble() ?? 0.0,
+      severityValue: (row['severity_percentage'] as num?)?.toDouble() ?? 0.0,
+      photoId: null,
+      scanDir: '',
+      treeId: row['tree_id'] as int?,
+      treeName: row['tree_name'] as String? ?? '',
+      treeLocation: row['tree_location'] as String? ?? '',
+      treeVariety: row['tree_variety'] as String? ?? '',
+      diseaseId: row['disease_id'] as int?,
+      diseaseName: row['disease_name'] as String? ?? '',
+      diseaseDescription: row['disease_description'] as String? ?? '',
+      diseaseSymptoms: row['disease_symptoms'] as String? ?? '',
+      diseasePrevention: row['disease_prevention'] as String? ?? '',
+      severityLevelId: row['severity_level_id'] as int?,
+      severityLevelName: row['resolved_severity_name'] as String? ?? '',
+      severityLevelDescription: row['severity_description'] as String? ?? '',
+    );
   }
 
   Future<void> batchUpsertScans(List<ScanItem> items) async {
@@ -647,10 +786,32 @@ class LocalDb {
         treeCache[row['name'] as String] = row['id'] as int;
       }
 
+      final itemIds = items.map((item) => item.id).toList();
+      final existingScans = itemIds.isEmpty
+          ? <Map<String, Object?>>[]
+          : await txn.rawQuery(
+              'SELECT id, tree_id, disease_id, disease_class FROM tbl_scan_record '
+              'WHERE id IN (${itemIds.map((_) => '?').join(',')})',
+              itemIds,
+            );
+      final existingScanRows = <int, Map<String, Object?>>{
+        for (final row in existingScans) row['id'] as int: row,
+      };
+
       for (final item in items) {
+        final existing = existingScanRows[item.id];
+
         // Upsert tree
         int? treeId = item.treeId;
-        if (treeId == null && item.treeName.isNotEmpty) {
+        if (treeId != null && item.treeName.isNotEmpty) {
+          await txn.insert('tbl_tree', {
+            'id': treeId,
+            'name': item.treeName,
+            'location': item.treeLocation,
+            'variety': item.treeVariety,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          treeCache[item.treeName] = treeId;
+        } else if (treeId == null && item.treeName.isNotEmpty) {
           treeId = treeCache[item.treeName];
           if (treeId == null) {
             treeId = await txn.insert('tbl_tree', {
@@ -665,7 +826,16 @@ class LocalDb {
         // Upsert disease
         final diseaseName = _resolvedDiseaseName(item);
         int? diseaseId = item.diseaseId;
-        if (diseaseId == null && diseaseName.isNotEmpty) {
+        if (diseaseId != null && diseaseName.isNotEmpty) {
+          await txn.insert('tbl_disease', {
+            'id': diseaseId,
+            'name': diseaseName,
+            'description': item.diseaseDescription,
+            'symptoms': item.diseaseSymptoms,
+            'prevention': item.diseasePrevention,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          diseaseCache[diseaseName] = diseaseId;
+        } else if (diseaseId == null && diseaseName.isNotEmpty) {
           diseaseId = diseaseCache[diseaseName];
           if (diseaseId == null) {
             diseaseId = await txn.insert('tbl_disease', {
@@ -674,6 +844,13 @@ class LocalDb {
             diseaseCache[diseaseName] = diseaseId;
           }
         }
+
+        treeId ??= existing?['tree_id'] as int?;
+        diseaseId ??= existing?['disease_id'] as int?;
+
+        final effectiveDiseaseClass = diseaseName.isNotEmpty
+            ? diseaseName
+          : (existing?['disease_class'] as String? ?? '');
 
         // Upsert severity level
         final resolvedSeverityName = _resolvedSeverityName(item);
@@ -695,7 +872,7 @@ class LocalDb {
           'disease_id': diseaseId,
           'severity_level_id': severityLevelId,
           'scan_timestamp': item.timestamp,
-          'disease_class': diseaseName,
+          'disease_class': effectiveDiseaseClass,
           'confidence_score': item.confidence,
           'severity_percentage': item.severityValue,
           'severity_level': resolvedSeverityName,
@@ -713,8 +890,12 @@ class LocalDb {
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
-          LOWER(TRIM(COALESCE(NULLIF(r.severity_level, ''), NULLIF(s.name, ''), ''))) AS severity_text,
-          LOWER(TRIM(COALESCE(NULLIF(r.disease_class, ''), NULLIF(d.name, ''), ''))) AS disease_text,
+          LOWER(TRIM(COALESCE(NULLIF(s.name, ''), NULLIF(r.severity_level, ''), ''))) AS severity_text,
+          LOWER(TRIM(CASE
+            WHEN NULLIF(d.name, '') IS NOT NULL THEN d.name
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(r.disease_class, ''), '')
+          END)) AS disease_text,
           COALESCE(r.severity_percentage, 0) AS severity_pct
         FROM tbl_scan_record r
         LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
@@ -724,10 +905,13 @@ class LocalDb {
         SELECT
           CASE
             WHEN severity_text LIKE '%healthy%' OR disease_text = 'healthy' THEN 'healthy'
+            WHEN severity_text = 'high' THEN 'advanced'
             WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
+            WHEN severity_text IN ('low', 'trace') THEN 'early'
             WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
             WHEN severity_pct > 40.0 THEN 'advanced'
             WHEN severity_pct > 5.0 THEN 'early'
+            WHEN disease_text != '' AND disease_text != 'healthy' THEN 'early'
             ELSE 'healthy'
           END AS bucket
         FROM normalized
@@ -759,6 +943,11 @@ class LocalDb {
   }
 
   Future<List<double>> getWeeklyTrend() async {
+    final rows = await getWeeklyTrendSeries();
+    return rows.map((row) => (row['count'] as int).toDouble()).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getWeeklyTrendSeries() async {
     final db = await database;
     final rows = await db.rawQuery('''
       WITH normalized AS (
@@ -776,22 +965,111 @@ class LocalDb {
       ORDER BY week DESC
       LIMIT 11
     ''');
-    // Return the counts in chronological order (oldest first)
-    final reversed = rows.reversed
-        .map((row) => (row['count'] as int).toDouble())
-        .toList();
-    return reversed;
+
+    final List<Map<String, dynamic>> series = [];
+    for (final row in rows.reversed) {
+      final weekRaw = row['week']?.toString() ?? '';
+      final count = row['count'] as int? ?? 0;
+      series.add({
+        'week': weekRaw,
+        'count': count,
+        'label': _weekLabelFromYearWeek(weekRaw),
+      });
+    }
+    return series;
+  }
+
+  String _weekLabelFromYearWeek(String yearWeek) {
+    final parts = yearWeek.split('-');
+    if (parts.length != 2) return yearWeek;
+
+    final year = int.tryParse(parts[0]);
+    final week = int.tryParse(parts[1]);
+    if (year == null || week == null) return yearWeek;
+
+    final jan1 = DateTime(year, 1, 1);
+    final weekStart = jan1.add(Duration(days: week * 7));
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${monthNames[weekStart.month - 1]} ${weekStart.day}';
+  }
+
+  Future<String?> getLatestScanDate() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT datetime(replace(replace(substr(scan_timestamp, 1, 19), 'T', ' '), 'Z', '')) AS normalized_ts
+        FROM tbl_scan_record
+        WHERE scan_timestamp IS NOT NULL AND TRIM(scan_timestamp) != ''
+      )
+      SELECT MAX(normalized_ts) AS latest
+      FROM normalized
+      WHERE normalized_ts IS NOT NULL
+    ''');
+
+    if (rows.isEmpty) return null;
+    return rows.first['latest'] as String?;
+  }
+
+  Future<Map<String, int>> getScanRowCompleteness() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        COUNT(*) AS total,
+        SUM(
+          CASE
+            WHEN scan_timestamp IS NULL OR TRIM(scan_timestamp) = ''
+              OR COALESCE(NULLIF(TRIM(disease_class), ''), '') = ''
+              OR COALESCE(confidence_score, -1) < 0
+              OR COALESCE(severity_percentage, -1) < 0
+            THEN 1
+            ELSE 0
+          END
+        ) AS incomplete
+      FROM tbl_scan_record
+    ''');
+
+    if (rows.isEmpty) {
+      return {'total': 0, 'incomplete': 0};
+    }
+
+    final row = rows.first;
+    return {
+      'total': row['total'] as int? ?? 0,
+      'incomplete': row['incomplete'] as int? ?? 0,
+    };
   }
 
   Future<List<Map<String, dynamic>>> getDiseaseDistribution() async {
     final db = await database;
     final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT
+          CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END AS disease
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+      )
       SELECT
-        COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown') AS disease,
+        COALESCE(NULLIF(disease, ''), 'Unknown') AS disease,
         COUNT(*) AS count
-      FROM tbl_scan_record r
-      LEFT JOIN tbl_disease d ON r.disease_id = d.id
-      GROUP BY COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown')
+      FROM normalized
+      GROUP BY COALESCE(NULLIF(disease, ''), 'Unknown')
       ORDER BY count DESC
     ''');
     return rows;
@@ -800,13 +1078,20 @@ class LocalDb {
   Future<String> getPrimaryDiseaseName() async {
     final db = await database;
     final rows = await db.rawQuery('''
-      SELECT
-        COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown') AS disease,
-        COUNT(*) AS count
-      FROM tbl_scan_record r
-      LEFT JOIN tbl_disease d ON r.disease_id = d.id
-      WHERE LOWER(COALESCE(NULLIF(d.name, ''), NULLIF(r.disease_class, ''), '')) NOT IN ('healthy', 'unknown', '')
-      GROUP BY COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown')
+      WITH normalized AS (
+        SELECT
+          CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END AS disease
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+      )
+      SELECT disease, COUNT(*) AS count
+      FROM normalized
+      WHERE LOWER(disease) NOT IN ('healthy', 'unknown', '')
+      GROUP BY disease
       ORDER BY count DESC
       LIMIT 1
     ''');
@@ -821,8 +1106,12 @@ class LocalDb {
       SELECT r.*, t.name as tree_name, t.location as tree_location, t.variety as tree_variety,
              d.name as disease_name, d.description as disease_description, d.symptoms as disease_symptoms, d.prevention as disease_prevention,
             s.name as severity_name, s.description as severity_description,
-            COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), '') as resolved_disease,
-        COALESCE(NULLIF(TRIM(r.severity_level), ''), NULLIF(TRIM(s.name), ''), '') as resolved_severity_name,
+            CASE
+              WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+              WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+              ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+            END as resolved_disease,
+        COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
         COALESCE(
           NULLIF(TRIM(r.image_path), ''),
           NULLIF(TRIM(r.thumbnail_path), ''),
@@ -945,7 +1234,7 @@ class LocalDb {
           ) as image_url,
           r.confidence_score as confidence,
           r.severity_percentage as severity_value,
-          COALESCE(NULLIF(TRIM(r.severity_level), ''), NULLIF(TRIM(s.name), ''), '') as severity_label,
+          COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as severity_label,
           r.analysis_updated_at as updated_at,
           r.source
         FROM tbl_scan_record r
@@ -974,11 +1263,29 @@ class LocalDb {
         COALESCE(
           NULLIF(TRIM(image_path), ''),
           NULLIF(TRIM(thumbnail_path), '')
-        ) AS image_path
+        ) AS image_path,
+        NULLIF(TRIM((
+          SELECT p.image_url
+          FROM tbl_photos p
+          WHERE (p.photo_id = tbl_scan_record.id OR p.id = tbl_scan_record.id)
+            AND p.image_url IS NOT NULL
+            AND TRIM(p.image_url) != ''
+          ORDER BY p.id DESC
+          LIMIT 1
+        )), '') AS image_url
       FROM tbl_scan_record
       WHERE COALESCE(
         NULLIF(TRIM(image_path), ''),
-        NULLIF(TRIM(thumbnail_path), '')
+        NULLIF(TRIM(thumbnail_path), ''),
+        NULLIF(TRIM((
+          SELECT p.image_url
+          FROM tbl_photos p
+          WHERE (p.photo_id = tbl_scan_record.id OR p.id = tbl_scan_record.id)
+            AND p.image_url IS NOT NULL
+            AND TRIM(p.image_url) != ''
+          ORDER BY p.id DESC
+          LIMIT 1
+        )), '')
       ) IS NOT NULL
       ORDER BY id DESC
     ''');
@@ -1021,6 +1328,52 @@ class LocalDb {
       if (photoId != null) 'photo_id': photoId,
       if (scanDir != null) 'scan_dir': scanDir,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> batchUpsertPhotos(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+
+    final db = await database;
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'tbl_photos',
+        columns: ['name', 'timestamp'],
+      );
+      final existingKeys = <String>{
+        for (final row in existing)
+          '${row['name'] as String}|${row['timestamp'] as String}',
+      };
+
+      for (final row in rows) {
+        final name = (row['name'] as String?)?.trim() ?? '';
+        final timestamp = (row['timestamp'] as String?)?.trim() ?? '';
+        if (name.isEmpty || timestamp.isEmpty) continue;
+
+        final key = '$name|$timestamp';
+        if (existingKeys.contains(key)) continue;
+
+        await txn.insert('tbl_photos', {
+          'name': name,
+          'data': (row['data'] as String?) ?? '',
+          'timestamp': timestamp,
+          if (row['path'] != null) 'path': row['path'],
+          if (row['title'] != null) 'title': row['title'],
+          if (row['description'] != null) 'description': row['description'],
+          if (row['image_url'] != null) 'image_url': row['image_url'],
+          if (row['checksum'] != null) 'checksum': row['checksum'],
+          if (row['source'] != null) 'source': row['source'],
+          if (row['updated_at'] != null) 'updated_at': row['updated_at'],
+          if (row['disease'] != null) 'disease': row['disease'],
+          if (row['confidence'] != null) 'confidence': row['confidence'],
+          if (row['severity_value'] != null)
+            'severity_value': row['severity_value'],
+          if (row['photo_id'] != null) 'photo_id': row['photo_id'],
+          if (row['scan_dir'] != null) 'scan_dir': row['scan_dir'],
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+        existingKeys.add(key);
+      }
+    });
   }
 
   Future<List<Map<String, dynamic>>> getAllPhotos() async {

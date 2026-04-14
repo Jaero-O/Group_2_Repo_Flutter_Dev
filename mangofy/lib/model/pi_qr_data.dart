@@ -4,6 +4,7 @@ class PiQrEndpoints {
   final String statusPath;
   final String? dbDownloadPath;
   final String? scanBundlePathTemplate;
+  final String? bulkImagesZipPath;
 
   // Back-compat / optional endpoints used by the current app.
   final String scansAllPath;
@@ -15,6 +16,7 @@ class PiQrEndpoints {
     this.statusPath = '/api/status',
     this.dbDownloadPath = '/api/db/download',
     this.scanBundlePathTemplate = '/api/scan/{id}/bundle',
+    this.bulkImagesZipPath = '/api/images/bulk-zip',
     this.scansAllPath = '/api/scan/all',
     this.scansSincePathTemplate = '/api/scan/since/{timestamp}',
     this.scanByIdPathTemplate = '/api/scan/{id}',
@@ -98,6 +100,11 @@ class PiQrEndpoints {
     ) ??
     '/api/scan/{id}/bundle';
 
+    final bulkImagesZipPath = _normalizePathOnly(
+      _readString(endpointsObj, const ['bulkImagesZipPath', 'bulk_images_zip_path', 'bulk_images_path', 'bulkImageZipPath']),
+    ) ??
+    '/api/images/bulk-zip';
+
     final scansAllPath = _normalizePathOnly(
           _readString(endpointsObj, const ['scansAllPath', 'scans_all_path', 'scan_all_path']),
         ) ??
@@ -122,6 +129,7 @@ class PiQrEndpoints {
       statusPath: statusPath,
       dbDownloadPath: dbDownloadPath,
       scanBundlePathTemplate: scanBundlePathTemplate,
+      bulkImagesZipPath: bulkImagesZipPath,
       scansAllPath: scansAllPath,
       scansSincePathTemplate: scansSincePathTemplate,
       scanByIdPathTemplate: scanByIdPathTemplate,
@@ -153,6 +161,21 @@ class PiQrEndpoints {
   String resolveImagePath(String fileName) {
     final template = imagePathTemplate;
     return template.contains('{filename}') ? template.replaceAll('{filename}', fileName) : template;
+  }
+
+  String resolveBulkImagesZipPath(List<String> fileNames) {
+    final path = bulkImagesZipPath;
+    if (path == null || path.isEmpty) {
+      throw const FormatException('QR payload is missing bulk images zip endpoint path.');
+    }
+    final encoded = fileNames
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .map(Uri.encodeQueryComponent)
+        .join(',');
+    if (encoded.isEmpty) return path;
+    final separator = path.contains('?') ? '&' : '?';
+    return '$path${separator}files=$encoded';
   }
 }
 

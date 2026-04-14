@@ -9,12 +9,14 @@ class PhotoGridContent extends StatelessWidget {
   final String viewMode;
   final ValueChanged<String>? onPhotoLongPress;
   final List<PhotoMetadata> photos;
+  final bool isLoadingMore;
 
   const PhotoGridContent({
     super.key,
     this.viewMode = 'All Photos',
     this.onPhotoLongPress,
     required this.photos,
+    this.isLoadingMore = false,
   });
 
   DateTime? _parseTimestamp(String raw) {
@@ -110,12 +112,13 @@ class PhotoGridContent extends StatelessWidget {
       final sortedPhotos = List<PhotoMetadata>.from(photos)
         ..sort(_comparePhotosByTimestampDesc);
       return PhotoGrid(
-        photos: sortedPhotos as List<dynamic>,
+        photos: List<dynamic>.from(sortedPhotos),
         crossAxisCount: 4,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
         padding: const EdgeInsets.all(4),
         borderRadius: 4,
+        isLoadingMore: isLoadingMore,
         onItemTap: (index) {
           _openFullScreenView(
             context,
@@ -145,10 +148,37 @@ class PhotoGridContent extends StatelessWidget {
         },
       );
     } else {
-      return ListView(
-        padding: const EdgeInsets.all(12),
-        children: _buildGroupedSections(context),
-      );
+      try {
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: _buildGroupedSections(context),
+        );
+      } catch (_) {
+        final sortedPhotos = List<PhotoMetadata>.from(photos)
+          ..sort(_comparePhotosByTimestampDesc);
+        return PhotoGrid(
+          photos: List<dynamic>.from(sortedPhotos),
+          crossAxisCount: 4,
+          crossAxisSpacing: 4,
+          mainAxisSpacing: 4,
+          padding: const EdgeInsets.all(4),
+          borderRadius: 4,
+          onItemTap: (index) {
+            _openFullScreenView(
+              context,
+              sortedPhotos[index].path ?? sortedPhotos[index].id.toString(),
+              sortedPhotos[index],
+            );
+          },
+          onItemLongPress: (index) {
+            final id = sortedPhotos[index].id;
+            if (id == null) return;
+            if (onPhotoLongPress != null) {
+              onPhotoLongPress!(id.toString());
+            }
+          },
+        );
+      }
     }
   }
 
@@ -202,10 +232,7 @@ class PhotoGridContent extends StatelessWidget {
       final Map<int, Map<int, List<PhotoMetadata>>> grouped = {};
       for (final x in datedPhotos) {
         final t = x.time!;
-        (grouped[t.year] ??= {})[t.month] = [
-          ...(grouped[t.year]?[t.month] ?? const []),
-          x.photo,
-        ];
+        ((grouped[t.year] ??= {})[t.month] ??= []).add(x.photo);
       }
 
       final years = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -256,7 +283,7 @@ class PhotoGridContent extends StatelessWidget {
       for (final x in datedPhotos) {
         final t = x.time!;
         final key = '${t.year}-${t.month.toString().padLeft(2, '0')}';
-        grouped[key] = [...(grouped[key] ?? const []), x.photo];
+        (grouped[key] ??= []).add(x.photo);
       }
 
       final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -283,7 +310,7 @@ class PhotoGridContent extends StatelessWidget {
       final t = x.time!;
       final key =
           '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
-      grouped[key] = [...(grouped[key] ?? const []), x.photo];
+      (grouped[key] ??= []).add(x.photo);
     }
     final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
     for (final key in keys) {
@@ -336,7 +363,7 @@ class PhotoGridContent extends StatelessWidget {
     List<PhotoMetadata> groupedPhotos,
   ) {
     return PhotoGrid(
-      photos: groupedPhotos as List<dynamic>,
+      photos: List<dynamic>.from(groupedPhotos),
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 4,
@@ -372,8 +399,14 @@ class PhotoGridContent extends StatelessWidget {
 class PhotosView extends StatefulWidget {
   final ValueChanged<String>? onPhotoLongPress;
   final List<PhotoMetadata> photos;
+  final bool isLoadingMore;
 
-  const PhotosView({super.key, this.onPhotoLongPress, required this.photos});
+  const PhotosView({
+    super.key,
+    this.onPhotoLongPress,
+    required this.photos,
+    this.isLoadingMore = false,
+  });
 
   @override
   State<PhotosView> createState() => _PhotosViewState();
@@ -391,6 +424,7 @@ class _PhotosViewState extends State<PhotosView> {
             viewMode: viewMode,
             onPhotoLongPress: widget.onPhotoLongPress,
             photos: widget.photos,
+            isLoadingMore: widget.isLoadingMore,
           ),
         ),
 

@@ -350,6 +350,7 @@ class PhotoGrid extends StatelessWidget {
   final bool shrinkWrap;
   final ScrollPhysics? physics;
   final EdgeInsetsGeometry padding;
+  final bool isLoadingMore;
   // Property for tap handler
   final ValueChanged<int>? onItemTap;
   // Property for long press handler
@@ -365,6 +366,7 @@ class PhotoGrid extends StatelessWidget {
     this.shrinkWrap = false,
     this.physics,
     this.padding = EdgeInsets.zero,
+    this.isLoadingMore = false,
     this.onItemTap,
     this.onItemLongPress,
   });
@@ -380,8 +382,24 @@ class PhotoGrid extends StatelessWidget {
         crossAxisSpacing: crossAxisSpacing,
         mainAxisSpacing: mainAxisSpacing,
       ),
-      itemCount: photos.length,
+      itemCount: photos.length + (isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index == photos.length) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.green,
+                ),
+              ),
+            ),
+          );
+        }
+
         final photo = photos[index];
         return LongPressableGridItemPlaceholder(
           borderRadius: borderRadius,
@@ -429,33 +447,38 @@ class PhotoGridItem extends StatelessWidget {
           imageWidget = Image.network(
             normalizedPath,
             fit: BoxFit.cover,
+            cacheWidth: 200,
+            cacheHeight: 200,
             errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.image_not_supported, color: Colors.grey),
           );
         } else {
-          final file = File(normalizedPath);
-          if (file.existsSync()) {
-            // Use file-backed image
-            imageWidget = Image.file(file, fit: BoxFit.cover);
-          } else if (imageUrl != null && imageUrl.isNotEmpty) {
-            imageWidget = Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.image_not_supported, color: Colors.grey),
-            );
-          } else {
-            // File path exists but file not found - show placeholder
-            imageWidget = const Icon(
-              Icons.image_not_supported,
-              color: Colors.grey,
-            );
-          }
+          imageWidget = Image.file(
+            File(normalizedPath),
+            fit: BoxFit.cover,
+            cacheWidth: 200,
+            cacheHeight: 200,
+            errorBuilder: (context, error, stackTrace) {
+              if (imageUrl != null && imageUrl.isNotEmpty) {
+                return Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  cacheWidth: 200,
+                  cacheHeight: 200,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.image_not_supported, color: Colors.grey),
+                );
+              }
+              return const Icon(Icons.image_not_supported, color: Colors.grey);
+            },
+          );
         }
       } else if (imageUrl != null && imageUrl.isNotEmpty) {
         imageWidget = Image.network(
           imageUrl,
           fit: BoxFit.cover,
+          cacheWidth: 200,
+          cacheHeight: 200,
           errorBuilder: (context, error, stackTrace) =>
               const Icon(Icons.image_not_supported, color: Colors.grey),
         );
@@ -463,7 +486,12 @@ class PhotoGridItem extends StatelessWidget {
         // Use base64-backed image for legacy items
         try {
           final bytes = base64Decode(imageData);
-          imageWidget = Image.memory(bytes, fit: BoxFit.cover);
+          imageWidget = Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            cacheWidth: 200,
+            cacheHeight: 200,
+          );
         } catch (e) {
           // Fallback if base64 decode fails
           imageWidget = const Icon(Icons.broken_image, color: Colors.grey);

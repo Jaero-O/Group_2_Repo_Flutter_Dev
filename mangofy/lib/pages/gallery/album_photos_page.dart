@@ -55,7 +55,9 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
     
     // Remove the overlay after the animation duration
     Future.delayed(const Duration(milliseconds: 2000), () {
-      overlayEntry.remove();
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
     });
   }
 

@@ -132,7 +132,7 @@ class PrimaryThreatCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'active cases',
+                    'diseased scans (all-time)',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey[500],
