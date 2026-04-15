@@ -213,6 +213,38 @@ class SyncService {
         await _hydrateImportedScanImages(accessUrl, endpoints, diagnostics);
         usedDbImportFallback = true;
         fetchSuccess = true;
+
+        // Top-up from live API because Pi DB exports can be slightly stale.
+        final latestImported = await LocalDb.instance.getLatestScanDate();
+        final topUpSinceIso = latestImported == null
+            ? null
+            : DateTime.tryParse(latestImported.replaceFirst(' ', 'T'))
+                  ?.toUtc()
+                  .toIso8601String();
+
+        if (topUpSinceIso != null) {
+          progressNotifier.value = const SyncProgress(
+            stage: 'Syncing',
+            completedUnits: 0,
+            totalUnits: 1,
+            message: 'Checking for new scans after DB import…',
+          );
+
+          final recentScans = await PiApi.instance.getScansSince(
+            accessUrl,
+            topUpSinceIso,
+            endpoints: endpoints,
+          );
+
+          if (recentScans.isNotEmpty) {
+            diagnostics.scansFetched += recentScans.length;
+            await _processScans(
+              recentScans,
+              baseUrl: accessUrl,
+              endpoints: endpoints,
+            );
+          }
+        }
       } catch (dbErr) {
         debugPrint('DB import failed, falling back to JSON API: $dbErr');
       }
@@ -412,12 +444,19 @@ class SyncService {
       final fileName = _extractImageFileName(imageRef) ?? '';
       if (fileName.isEmpty) return;
 
-      final candidate = File('${docs.path}/$fileName');
-      final candidateInPhotos = File(join(photosDir.path, fileName));
+      final localFileName = 'scan_${scanId}_$fileName';
+      final candidate = File('${docs.path}/$localFileName');
+      final legacyCandidate = File('${docs.path}/$fileName');
+      final candidateInPhotos = File(join(photosDir.path, localFileName));
+      final legacyCandidateInPhotos = File(join(photosDir.path, fileName));
       if (await candidateInPhotos.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, candidateInPhotos.path);
+      } else if (await legacyCandidateInPhotos.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, legacyCandidateInPhotos.path);
       } else if (await candidate.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, candidate.path);
+      } else if (await legacyCandidate.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, legacyCandidate.path);
       }
     }));
   }
@@ -448,19 +487,37 @@ class SyncService {
       final fileName = _extractImageFileName(imageRef) ?? '';
       if (fileName.isEmpty) return null;
 
-      final inPhotos = File(join(photosDir.path, fileName));
+      final localFileName = 'scan_${scanId}_$fileName';
+
+      final inPhotos = File(join(photosDir.path, localFileName));
       if (await inPhotos.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, inPhotos.path);
         return null;
       }
 
-      final inDocs = File(join(docs.path, fileName));
+      final inPhotosLegacy = File(join(photosDir.path, fileName));
+      if (await inPhotosLegacy.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, inPhotosLegacy.path);
+        return null;
+      }
+
+      final inDocs = File(join(docs.path, localFileName));
       if (await inDocs.exists()) {
         await LocalDb.instance.updateScanImagePath(scanId, inDocs.path);
         return null;
       }
 
-      return {'scanId': scanId, 'fileName': fileName};
+      final inDocsLegacy = File(join(docs.path, fileName));
+      if (await inDocsLegacy.exists()) {
+        await LocalDb.instance.updateScanImagePath(scanId, inDocsLegacy.path);
+        return null;
+      }
+
+      return {
+        'scanId': scanId,
+        'remoteFileName': fileName,
+        'localFileName': localFileName,
+      };
       }),
     );
     pending.addAll(pendingCandidates.whereType<Map<String, dynamic>>());
@@ -506,13 +563,14 @@ class SyncService {
       await Future.wait(
         chunk.map((item) async {
           final scanId = item['scanId'] as int;
-          final fileName = item['fileName'] as String;
+          final remoteFileName = item['remoteFileName'] as String;
+          final localFileName = item['localFileName'] as String;
           diagnostics.imagesAttempted++;
           try {
             final localPath = await PiApi.instance.downloadFile(
               baseUrl: baseUrl,
-              path: endpoints.resolveImagePath(fileName),
-              fileName: fileName,
+              path: endpoints.resolveImagePath(remoteFileName),
+              fileName: localFileName,
               timeout: const Duration(seconds: 30),
             );
             diagnostics.imagesDownloaded++;
@@ -573,9 +631,14 @@ class SyncService {
     final scansWithImages = scans.where((s) => s.imageUrl.isNotEmpty).toList();
     final pendingForBulk = <Map<String, dynamic>>[];
     for (final scan in scansWithImages) {
-      final fileName = _extractImageFileName(scan.imageUrl);
-      if (fileName == null || fileName.isEmpty) continue;
-      pendingForBulk.add({'scanId': scan.id, 'fileName': fileName});
+      final remoteFileName = _extractImageFileName(scan.imageUrl);
+      if (remoteFileName == null || remoteFileName.isEmpty) continue;
+      final localFileName = 'scan_${scan.id}_$remoteFileName';
+      pendingForBulk.add({
+        'scanId': scan.id,
+        'remoteFileName': remoteFileName,
+        'localFileName': localFileName,
+      });
     }
 
     final bulkDownloadedPaths = await _downloadBulkImagePaths(
@@ -611,7 +674,8 @@ class SyncService {
           diagnostics.imagesDownloaded++;
         }
 
-        final fileName = basename(localPath);
+        final uniqueFileName = 'scan_${remote.id}_${basename(localPath)}';
+        final fileName = preDownloadedPath == null ? uniqueFileName : basename(localPath);
         final permanentPath = join(photosDir.path, fileName);
         String updatedImagePath = localPath;
         if (localPath != permanentPath) {
@@ -748,7 +812,7 @@ class SyncService {
             : (i + _bulkZipFileChunkSize),
       );
       final fileNames = chunk
-          .map((item) => (item['fileName'] as String).trim())
+          .map((item) => (item['remoteFileName'] as String).trim())
           .where((name) => name.isNotEmpty)
           .toSet()
           .toList();
@@ -768,11 +832,21 @@ class SyncService {
 
         for (final item in chunk) {
           final scanId = item['scanId'] as int;
-          final fileName = item['fileName'] as String;
-          final extractedPath = join(extractedDir, fileName);
+          final remoteFileName = item['remoteFileName'] as String;
+          final localFileName = item['localFileName'] as String;
+          final extractedPath = join(extractedDir, remoteFileName);
           final extractedFile = File(extractedPath);
           if (await extractedFile.exists()) {
-            result[scanId] = extractedPath;
+            final localExtractedPath = join(extractedDir, localFileName);
+            if (extractedPath != localExtractedPath) {
+              final localExtractedFile = File(localExtractedPath);
+              if (!await localExtractedFile.exists()) {
+                await extractedFile.copy(localExtractedPath);
+              }
+              result[scanId] = localExtractedPath;
+            } else {
+              result[scanId] = extractedPath;
+            }
             diagnostics.imagesDownloaded++;
           }
         }

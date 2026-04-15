@@ -40,12 +40,24 @@ class _GalleryPageState extends State<GalleryPage> {
   bool _hasMore = true;
   bool _isLoadingMore = false;
 
+  bool _hasExplicitTimezone(String value) {
+    if (value.endsWith('Z') || value.endsWith('z')) return true;
+    final tIndex = value.indexOf('T');
+    if (tIndex < 0) return false;
+    final timePart = value.substring(tIndex + 1);
+    return RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(timePart);
+  }
+
   String _normalizeTimestamp(String raw, {String? fallbackRaw}) {
     final trimmed = raw.trim().isNotEmpty ? raw.trim() : (fallbackRaw ?? '').trim();
     if (trimmed.isEmpty) return trimmed;
 
     final normalized = trimmed.replaceFirst(' ', 'T');
-    final parsed = DateTime.tryParse(normalized);
+    final parseInput = !_hasExplicitTimezone(normalized) && normalized.contains('T')
+        ? '${normalized}Z'
+        : normalized;
+
+    final parsed = DateTime.tryParse(parseInput);
     if (parsed != null) return parsed.toIso8601String();
 
     // Tolerate timestamps with trailing Z/milliseconds in non-standard variants.
@@ -253,12 +265,13 @@ class _GalleryPageState extends State<GalleryPage> {
 
   void _handleAlbumCreation(
     String albumName,
+    String location,
     List<String> selectedImageIds,
   ) async {
     try {
       await LocalDb.instance.insertMyTree(
         title: albumName,
-        location: 'New Album Location',
+        location: location,
         images: selectedImageIds.join(','),
       );
       await _loadData();
@@ -343,6 +356,32 @@ class _GalleryPageState extends State<GalleryPage> {
                   horizontal: 20,
                   vertical: 1,
                 ),
+                leading: const Icon(Icons.bookmark_add_outlined, color: Colors.green),
+                title: Text(
+                  'Add to My Tree',
+                  style: GoogleFonts.inter(
+                    color: Colors.green,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  await _handleAddToAlbum(imageId);
+                },
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Divider(
+                  height: 1,
+                  thickness: 1.2,
+                  color: Color(0xFFE0E0E0),
+                ),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 1,
+                ),
                 leading: const Icon(Icons.delete, color: Colors.red),
                 title: Text(
                   'Delete Photo',
@@ -371,6 +410,75 @@ class _GalleryPageState extends State<GalleryPage> {
         );
       },
     );
+  }
+
+  Future<void> _handleAddToAlbum(String scanId) async {
+    final selectedAlbum = await GalleryDialogs.showAddToAlbumDialog(
+      context,
+      myTreesAlbums,
+    );
+
+    MyTree? album = selectedAlbum;
+    if (album == null) {
+      final created = await GalleryDialogs.showCreateAlbumBasicDialog(context);
+      if (created == null || created.trim().isEmpty) return;
+
+      final parts = created.split('|');
+      final albumName = parts.isNotEmpty ? parts.first.trim() : '';
+      final location = parts.length > 1 ? parts[1].trim() : '';
+      if (albumName.isEmpty) return;
+
+      try {
+        await LocalDb.instance.insertMyTree(
+          title: albumName,
+          location: location,
+          images: scanId,
+        );
+      } catch (_) {
+        _showNotification(
+          'Could not create tree. Please try a different name.',
+          isDelete: true,
+        );
+        return;
+      }
+
+      await _loadData();
+      album = myTreesAlbums.cast<MyTree?>().firstWhere(
+        (a) => a?.title == albumName,
+        orElse: () => null,
+      );
+    }
+
+    if (album == null || album.id == null) return;
+
+    await LocalDb.instance.addImagesToMyTree(album.id!, [scanId]);
+    await _loadData();
+    if (!mounted) return;
+    _showNotification('Added to "${album.title}"');
+
+    await _promptAddToDataset(scanId);
+  }
+
+  Future<void> _promptAddToDataset(String scanId) async {
+    final folders = await LocalDb.instance.getAllDatasetFolders();
+    if (!mounted) return;
+
+    final selected = await GalleryDialogs.showAddToDatasetDialog(
+      context,
+      folders.map((f) => f.name).toList(),
+    );
+    if (selected == null) return;
+
+    String folderName = selected;
+    if (selected == '__CREATE_NEW__') {
+      final newName = await GalleryDialogs.showCreateDatasetFolderNameDialog(context);
+      if (newName == null || newName.trim().isEmpty) return;
+      folderName = newName.trim();
+    }
+
+    await LocalDb.instance.addImagesToDatasetFolder(folderName, [scanId]);
+    if (!mounted) return;
+    _showNotification('Added to dataset "$folderName"');
   }
 
   void _handleAlbumLongPress(MyTree album) {
@@ -526,6 +634,7 @@ class _GalleryPageState extends State<GalleryPage> {
         contentKey: isPhotosView ? 'AllPhotos' : selectedAlbumTitle!,
         allImageIds: _getCurrentImageIds(),
         selectedImages: selectedImages,
+        photosById: photosById,
         onToggleSelection: _toggleSelection,
       );
     } else {

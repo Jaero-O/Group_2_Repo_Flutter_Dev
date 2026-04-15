@@ -1,11 +1,9 @@
-import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import '../services/qr_scanner_service.dart';
-import '../services/local_db.dart';
 import '../services/sync_service.dart';
 import '../model/pi_qr_data.dart';
 
@@ -22,7 +20,6 @@ class _ScannerPageState extends State<ScannerPage> {
 
   final QrScannerService _scannerService = QrScannerService();
 
-  Uint8List? _imageBytes;
   bool _scanned = false;
   String? _error;
   String? _status;
@@ -136,26 +133,26 @@ class _ScannerPageState extends State<ScannerPage> {
       await SyncService.instance.syncFromPi(qrData);
 
       setState(() {
-        _status = 'Loading imported result…';
+        _status = 'Finalizing import…';
         _progressPercent = null;
       });
 
-      Uint8List? bytes;
-      final id = int.tryParse(qrData.scanId ?? '');
-      if (id != null) {
-        final localScan = await LocalDb.instance.getScanById(id);
-        if (localScan != null && localScan.imagePath.isNotEmpty) {
-          bytes = await File(localScan.imagePath).readAsBytes();
-        }
-      }
+      final diagnostics = SyncService.instance.diagnosticsNotifier.value;
+      final importedScans = diagnostics?.scansFetched ?? 0;
+      final importedImages = diagnostics?.imagesDownloaded ?? 0;
+      final failures = diagnostics?.failures ?? 0;
 
       if (mounted) {
-        setState(() {
-          _imageBytes = bytes;
-          _error = null;
-          _status = null;
-          _progressPercent = null;
-        });
+        await _showImportCompleteModal(
+          scans: importedScans,
+          images: importedImages,
+          failures: failures,
+        );
+        if (mounted && failures == 0) {
+          Navigator.of(context).pop(true);
+        } else if (mounted) {
+          _reset();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -170,12 +167,41 @@ class _ScannerPageState extends State<ScannerPage> {
 
   void _reset() {
     setState(() {
-      _imageBytes = null;
       _scanned = false;
       _error = null;
       _status = null;
       _progressPercent = null;
     });
+  }
+
+  Future<void> _showImportCompleteModal({
+    required int scans,
+    required int images,
+    required int failures,
+  }) async {
+    if (!mounted) return;
+
+    final success = failures == 0;
+    final statusText = success
+        ? 'Import complete.'
+        : 'Imported with $failures issues.';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: _ImportResultDialog(
+            success: success,
+            scans: scans,
+            images: images,
+            failures: failures,
+            statusText: statusText,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -316,47 +342,80 @@ class _ScannerPageState extends State<ScannerPage> {
     }
 
     if (_status != null) {
+      final percent = _progressPercent ?? 0.0;
+      final clampedPercent = percent.clamp(0.0, 1.0);
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_progressPercent != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: LinearProgressIndicator(value: _progressPercent),
-              )
-            else
-              const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(_status!, textAlign: TextAlign.center),
-          ],
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 16,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_download_rounded, color: Colors.green, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Importing Scans',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (_progressPercent != null)
+                Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: clampedPercent,
+                        minHeight: 10,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+                        backgroundColor: const Color(0xFFE8F5E9),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${(clampedPercent * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.green,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 2.8),
+                ),
+              const SizedBox(height: 12),
+              Text(
+                _status!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black87),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    if (_imageBytes == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 56),
-            const SizedBox(height: 12),
-            const Text('Sync complete.'),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _reset, child: const Text('Scan Another')),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        Expanded(child: Image.memory(_imageBytes!, fit: BoxFit.contain)),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton(onPressed: _reset, child: const Text('Scan Another')),
-        ),
-      ],
+    return const Center(
+      child: CircularProgressIndicator(),
     );
   }
 }
@@ -429,4 +488,102 @@ class _QrGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ImportResultDialog extends StatefulWidget {
+  final bool success;
+  final int scans;
+  final int images;
+  final int failures;
+  final String statusText;
+
+  const _ImportResultDialog({
+    required this.success,
+    required this.scans,
+    required this.images,
+    required this.failures,
+    required this.statusText,
+  });
+
+  @override
+  State<_ImportResultDialog> createState() => _ImportResultDialogState();
+}
+
+class _ImportResultDialogState extends State<_ImportResultDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _scale = CurvedAnimation(parent: _controller, curve: Curves.elasticOut);
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 18, offset: Offset(0, 8)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.success ? Icons.check_circle : Icons.warning_amber_rounded,
+                color: widget.success ? Colors.green : Colors.orange,
+                size: 84,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.success ? 'Import Successful' : 'Import Completed with Issues',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.statusText,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 12),
+              Text('Scans imported: ${widget.scans}'),
+              Text('Images downloaded: ${widget.images}'),
+              if (widget.failures > 0) Text('Failed items: ${widget.failures}'),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

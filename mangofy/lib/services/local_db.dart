@@ -630,8 +630,16 @@ class LocalDb {
         END as resolved_disease,
             COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
             COALESCE(
-              NULLIF(TRIM(r.image_path), ''),
-              NULLIF(TRIM(r.thumbnail_path), ''),
+              CASE
+                WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+                  THEN NULLIF(TRIM(r.image_path), '')
+                ELSE NULL
+              END,
+              CASE
+                WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                  THEN NULLIF(TRIM(r.thumbnail_path), '')
+                ELSE NULL
+              END,
               NULLIF(TRIM((
                 SELECT p.path
                 FROM tbl_photos p
@@ -683,8 +691,16 @@ class LocalDb {
         END as resolved_disease,
             COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
             COALESCE(
-              NULLIF(TRIM(r.image_path), ''),
-              NULLIF(TRIM(r.thumbnail_path), ''),
+              CASE
+                WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+                  THEN NULLIF(TRIM(r.image_path), '')
+                ELSE NULL
+              END,
+              CASE
+                WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                  THEN NULLIF(TRIM(r.thumbnail_path), '')
+                ELSE NULL
+              END,
               NULLIF(TRIM((
                 SELECT p.path
                 FROM tbl_photos p
@@ -790,7 +806,7 @@ class LocalDb {
       final existingScans = itemIds.isEmpty
           ? <Map<String, Object?>>[]
           : await txn.rawQuery(
-              'SELECT id, tree_id, disease_id, disease_class FROM tbl_scan_record '
+              'SELECT id, tree_id, disease_id, disease_class, scan_timestamp, image_path FROM tbl_scan_record '
               'WHERE id IN (${itemIds.map((_) => '?').join(',')})',
               itemIds,
             );
@@ -851,6 +867,14 @@ class LocalDb {
         final effectiveDiseaseClass = diseaseName.isNotEmpty
             ? diseaseName
           : (existing?['disease_class'] as String? ?? '');
+        final existingTimestamp = existing?['scan_timestamp']?.toString() ?? '';
+        final effectiveTimestamp = item.timestamp.isNotEmpty
+          ? item.timestamp
+          : existingTimestamp;
+        final existingImagePath = existing?['image_path']?.toString() ?? '';
+        final effectiveImagePath = item.imagePath.isNotEmpty
+          ? item.imagePath
+          : existingImagePath;
 
         // Upsert severity level
         final resolvedSeverityName = _resolvedSeverityName(item);
@@ -871,12 +895,12 @@ class LocalDb {
           'tree_id': treeId,
           'disease_id': diseaseId,
           'severity_level_id': severityLevelId,
-          'scan_timestamp': item.timestamp,
+          'scan_timestamp': effectiveTimestamp,
           'disease_class': effectiveDiseaseClass,
           'confidence_score': item.confidence,
           'severity_percentage': item.severityValue,
           'severity_level': resolvedSeverityName,
-          'image_path': item.imagePath,
+          'image_path': effectiveImagePath,
           'source': item.source,
           'analysis_updated_at': item.updatedAt,
           'is_archived': 0,
@@ -1099,6 +1123,30 @@ class LocalDb {
     return rows.first['disease']?.toString() ?? 'No Active Disease';
   }
 
+  Future<int> getAnthracnoseCount() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN d.name
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+      )
+      SELECT COUNT(*) AS count
+      FROM normalized
+      WHERE disease LIKE '%anthracnose%'
+    ''');
+
+    if (rows.isEmpty) return 0;
+    final value = rows.first['count'];
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   Future<ScanItem?> getScanById(int id) async {
     final db = await database;
     final rows = await db.rawQuery(
@@ -1113,8 +1161,16 @@ class LocalDb {
             END as resolved_disease,
         COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
         COALESCE(
-          NULLIF(TRIM(r.image_path), ''),
-          NULLIF(TRIM(r.thumbnail_path), ''),
+          CASE
+            WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+              THEN NULLIF(TRIM(r.image_path), '')
+            ELSE NULL
+          END,
+          CASE
+            WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+              THEN NULLIF(TRIM(r.thumbnail_path), '')
+            ELSE NULL
+          END,
           NULLIF(TRIM((
             SELECT p.path
             FROM tbl_photos p
@@ -1207,8 +1263,16 @@ class LocalDb {
           r.scan_timestamp,
           COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown') as disease_class,
           COALESCE(
-            NULLIF(TRIM(r.image_path), ''),
-            NULLIF(TRIM(r.thumbnail_path), ''),
+            CASE
+              WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+                THEN NULLIF(TRIM(r.image_path), '')
+              ELSE NULL
+            END,
+            CASE
+              WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                THEN NULLIF(TRIM(r.thumbnail_path), '')
+              ELSE NULL
+            END,
             NULLIF(TRIM((
               SELECT p.path
               FROM tbl_photos p
@@ -1261,8 +1325,16 @@ class LocalDb {
       SELECT
         id,
         COALESCE(
-          NULLIF(TRIM(image_path), ''),
-          NULLIF(TRIM(thumbnail_path), '')
+          CASE
+            WHEN TRIM(image_path) LIKE '/data/%' OR TRIM(image_path) LIKE '/storage/%'
+              THEN NULLIF(TRIM(image_path), '')
+            ELSE NULL
+          END,
+          CASE
+            WHEN TRIM(thumbnail_path) LIKE '/data/%' OR TRIM(thumbnail_path) LIKE '/storage/%'
+              THEN NULLIF(TRIM(thumbnail_path), '')
+            ELSE NULL
+          END
         ) AS image_path,
         NULLIF(TRIM((
           SELECT p.image_url
@@ -1275,8 +1347,16 @@ class LocalDb {
         )), '') AS image_url
       FROM tbl_scan_record
       WHERE COALESCE(
-        NULLIF(TRIM(image_path), ''),
-        NULLIF(TRIM(thumbnail_path), ''),
+        CASE
+          WHEN TRIM(image_path) LIKE '/data/%' OR TRIM(image_path) LIKE '/storage/%'
+            THEN NULLIF(TRIM(image_path), '')
+          ELSE NULL
+        END,
+        CASE
+          WHEN TRIM(thumbnail_path) LIKE '/data/%' OR TRIM(thumbnail_path) LIKE '/storage/%'
+            THEN NULLIF(TRIM(thumbnail_path), '')
+          ELSE NULL
+        END,
         NULLIF(TRIM((
           SELECT p.image_url
           FROM tbl_photos p
@@ -1429,6 +1509,19 @@ class LocalDb {
     return results;
   }
 
+  Future<List<Map<String, dynamic>>> getPhotosByScanIds(List<int> scanIds) async {
+    if (scanIds.isEmpty) return [];
+    final db = await database;
+    final placeholders = List.filled(scanIds.length, '?').join(',');
+    final results = await db.query(
+      'tbl_photos',
+      where: 'photo_id IN ($placeholders)',
+      whereArgs: scanIds,
+      orderBy: 'id DESC',
+    );
+    return results;
+  }
+
   Future<int> deletePhoto(int id) async {
     final db = await database;
     return db.delete('tbl_photos', where: "id = ?", whereArgs: [id]);
@@ -1490,6 +1583,34 @@ class LocalDb {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<Map<String, dynamic>?> getMyTreeById(int id) async {
+    final db = await database;
+    final results = await db.query(
+      'tbl_my_trees',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return results.isNotEmpty ? results.first : null;
+  }
+
+  Future<void> addImagesToMyTree(int treeId, List<String> imageIds) async {
+    if (imageIds.isEmpty) return;
+
+    final row = await getMyTreeById(treeId);
+    if (row == null) return;
+
+    final raw = row['images']?.toString() ?? '';
+    final existing = raw
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final merged = <String>{...existing, ...imageIds.map((e) => e.trim()).where((e) => e.isNotEmpty)};
+
+    await updateMyTree(treeId, images: merged.join(','));
   }
 
   Future<int> updateMyTreeTitle(String oldTitle, String newTitle) async {
@@ -1582,6 +1703,43 @@ class LocalDb {
     await db.update(
       'tbl_dataset_folders',
       {'images': updatedImages.join(',')},
+      where: 'name = ?',
+      whereArgs: [folderName],
+    );
+  }
+
+  Future<void> addImagesToDatasetFolder(String folderName, List<String> imageIds) async {
+    if (imageIds.isEmpty) return;
+
+    final db = await database;
+    final rows = await db.query(
+      'tbl_dataset_folders',
+      where: 'name = ?',
+      whereArgs: [folderName],
+      limit: 1,
+    );
+
+    final incoming = imageIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (incoming.isEmpty) return;
+
+    if (rows.isEmpty) {
+      await insertDatasetFolder(
+        name: folderName,
+        imageIds: incoming,
+        dateCreated: DateTime.now().toIso8601String(),
+      );
+      return;
+    }
+
+    final existingFolder = DatasetFolder.fromMap(rows.first);
+    final merged = <String>{...existingFolder.images, ...incoming};
+
+    await db.update(
+      'tbl_dataset_folders',
+      {'images': merged.join(',')},
       where: 'name = ?',
       whereArgs: [folderName],
     );

@@ -149,7 +149,7 @@ class PiApi {
       final id = row['id'] ?? row['database_id'];
       final key = id != null
           ? 'id:$id'
-          : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
+          : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? row['scan_timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
       if (seenKeys.add(key)) {
         collected.add(row);
         addedOnFirst++;
@@ -195,7 +195,7 @@ class PiApi {
           final id = row['id'] ?? row['database_id'];
           final key = id != null
               ? 'id:$id'
-              : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
+              : '${row['scan_dir'] ?? ''}|${row['timestamp'] ?? row['scan_timestamp'] ?? ''}|${row['image_url'] ?? row['reduced_image'] ?? ''}';
           if (seenKeys.add(key)) {
             collected.add(row);
             added++;

@@ -71,6 +71,14 @@ class ScanItem {
     return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
+  static bool _hasExplicitTimezone(String value) {
+    final normalized = value.trim().replaceFirst(' ', 'T');
+    if (!normalized.contains('T')) return false;
+    final suffix = normalized.substring(normalized.indexOf('T') + 1);
+    if (suffix.contains('Z')) return true;
+    return RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(suffix);
+  }
+
   factory ScanItem.fromJson(Map<String, dynamic> json) {
     // Backward-compatible parsing:
     // - Old Pi payload: {id,title,description,timestamp,image_url,...}
@@ -82,14 +90,25 @@ class ScanItem {
         json.containsKey('reduced_image') ||
         json.containsKey('scan_dir');
 
-    final String timestamp = json['timestamp']?.toString() ?? '';
+    final String timestamp =
+      json['timestamp']?.toString().trim().isNotEmpty == true
+      ? json['timestamp'].toString()
+      : (json['scan_timestamp']?.toString() ??
+          json['created_at']?.toString() ??
+          json['date']?.toString() ??
+          '');
     final String scanDir = json['scan_dir']?.toString() ?? '';
     final String reducedImage = json['reduced_image']?.toString() ?? '';
 
     // Normalize timestamp to canonical ISO format for consistent deduplication
     String normalizedTimestamp = '';
     if (timestamp.isNotEmpty) {
-      final dt = DateTime.tryParse(timestamp);
+      final normalizedInput = timestamp.trim().replaceFirst(' ', 'T');
+      final parseInput = (!_hasExplicitTimezone(normalizedInput) &&
+              normalizedInput.contains('T'))
+          ? '${normalizedInput}Z'
+          : normalizedInput;
+      final dt = DateTime.tryParse(parseInput);
       if (dt != null) {
         normalizedTimestamp = dt.toUtc().toIso8601String();
       } else {

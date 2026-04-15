@@ -43,10 +43,18 @@ class _MyHomePageState extends State<MyHomePage> {
 
   static const Color selectedColor = Color(0xFF007700);
 
-  void _openQrScanner() {
-    Navigator.of(context).push(
+  Future<void> _openQrScanner() async {
+    final imported = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const ScannerPage()),
     );
+
+    if (!mounted || imported != true) return;
+
+    setState(() {
+      navIndex = 0;
+      pageIndex = 0;
+      _isPageBuilt[0] = true;
+    });
   }
 
   void _onDestinationSelected(int index) {

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'gallery_page.dart';
+import '../../model/my_tree_model.dart';
 
-typedef AlbumCreationCallback = void Function(String albumName, List<String> selectedImageIds);
+typedef AlbumCreationCallback = void Function(String albumName, String location, List<String> selectedImageIds);
 typedef AlbumUpdateCallback = void Function(String oldName, String newName);
 typedef AlbumDeletionCallback = void Function(String albumName);
 typedef PhotoRenameCallback = void Function(String oldId, String newName);
@@ -13,7 +14,8 @@ class GalleryDialogs {
     BuildContext parentContext,
     AlbumCreationCallback onAlbumCreated,
   ) {
-    final TextEditingController controller = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController locationController = TextEditingController();
     
     showDialog(
       context: parentContext,
@@ -48,11 +50,30 @@ class GalleryDialogs {
                 const SizedBox(height: 20),
                 // Styled TextField (Matching Rename UI)
                 TextField(
-                  controller: controller,
+                  controller: nameController,
                   autofocus: true,
                   textAlign: TextAlign.left,
                   decoration: InputDecoration(
                     hintText: 'e.g., My Mango Tree',
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey, width: 1),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 2.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: locationController,
+                  textAlign: TextAlign.left,
+                  decoration: InputDecoration(
+                    hintText: 'e.g., Brgy. San Isidro',
                     filled: true,
                     fillColor: Colors.grey[50],
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -86,12 +107,14 @@ class GalleryDialogs {
                     Expanded(
                       child: TextButton(
                         onPressed: () {
-                          final albumName = controller.text.trim();
+                          final albumName = nameController.text.trim();
                           if (albumName.isEmpty) return;
+                          final location = locationController.text.trim();
                           Navigator.pop(dialogContext);
                           _navigateToSelectionForAlbum(
                             parentContext,
                             albumName,
+                            location,
                             onAlbumCreated,
                           );
                         },
@@ -398,6 +421,7 @@ class GalleryDialogs {
   static void _navigateToSelectionForAlbum(
     BuildContext activeContext,
     String albumName,
+    String location,
     AlbumCreationCallback onAlbumCreated,
   ) async {
     final selectedImageIds = await Navigator.push<List<String>>(
@@ -408,7 +432,7 @@ class GalleryDialogs {
     );
 
     if (selectedImageIds != null && selectedImageIds.isNotEmpty) {
-      onAlbumCreated(albumName, selectedImageIds);
+      onAlbumCreated(albumName, location, selectedImageIds);
 
       // --- CUSTOM NOTIFICATION-STYLE SNACKBAR ---
       ScaffoldMessenger.of(activeContext).showSnackBar(
@@ -438,5 +462,247 @@ class GalleryDialogs {
         ),
       );
     }
+  }
+
+  static Future<MyTree?> showAddToAlbumDialog(
+    BuildContext context,
+    List<MyTree> albums,
+  ) async {
+    return showModalBottomSheet<MyTree>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                'Add To My Tree',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+              if (albums.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No trees yet. Create one first.',
+                    style: GoogleFonts.inter(color: Colors.black54),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: albums.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final album = albums[index];
+                      return ListTile(
+                        leading: const Icon(Icons.park_outlined, color: Colors.green),
+                        title: Text(album.title, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        subtitle: album.location.isEmpty ? null : Text(album.location),
+                        onTap: () => Navigator.pop(sheetContext, album),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<String?> showCreateAlbumBasicDialog(BuildContext context) async {
+    final nameController = TextEditingController();
+    final locationController = TextEditingController();
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Create New Tree',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Tree name',
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: locationController,
+                  decoration: InputDecoration(
+                    hintText: 'Location (optional)',
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final name = nameController.text.trim();
+                          if (name.isEmpty) return;
+                          final location = locationController.text.trim();
+                          Navigator.pop(dialogContext, '$name|$location');
+                        },
+                        child: const Text('Create'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<String?> showAddToDatasetDialog(
+    BuildContext context,
+    List<String> folderNames,
+  ) async {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                'Add To Dataset',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.create_new_folder_outlined, color: Colors.green),
+                title: Text('Create New Dataset Folder', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(sheetContext, '__CREATE_NEW__'),
+              ),
+              const Divider(height: 1),
+              if (folderNames.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('No existing dataset folders.', style: GoogleFonts.inter(color: Colors.black54)),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: folderNames.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final folder = folderNames[index];
+                      return ListTile(
+                        leading: const Icon(Icons.folder_open, color: Colors.orange),
+                        title: Text(folder, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        onTap: () => Navigator.pop(sheetContext, folder),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<String?> showCreateDatasetFolderNameDialog(BuildContext context) async {
+    final controller = TextEditingController();
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Create Dataset Folder',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Folder name',
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          final name = controller.text.trim();
+                          if (name.isEmpty) return;
+                          Navigator.pop(dialogContext, name);
+                        },
+                        child: const Text('Create'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
