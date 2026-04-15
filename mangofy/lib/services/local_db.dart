@@ -459,6 +459,9 @@ class LocalDb {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_photos_name_timestamp ON tbl_photos(name, timestamp)',
         );
+        // Stamp the app schema version so _initDb() skips onCreate/onUpgrade
+        // when it next opens this imported DB.
+        await db.execute('PRAGMA user_version = 5');
       } finally {
         await db.close();
       }
@@ -522,12 +525,18 @@ class LocalDb {
     // Upsert tree if data provided
     int? treeId = item.treeId;
     if (treeId != null && item.treeName.isNotEmpty) {
+      // Use IGNORE (not REPLACE) — REPLACE does DELETE+INSERT which triggers
+      // ON DELETE CASCADE on tbl_scan_record.tree_id and wipes scan records.
       await db.insert('tbl_tree', {
         'id': treeId,
         'name': item.treeName,
         'location': item.treeLocation,
         'variety': item.treeVariety,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.rawUpdate(
+        'UPDATE tbl_tree SET name=?, location=?, variety=? WHERE id=?',
+        [item.treeName, item.treeLocation, item.treeVariety, treeId],
+      );
     }
 
     // Upsert disease if data provided
@@ -539,7 +548,11 @@ class LocalDb {
         'description': item.diseaseDescription,
         'symptoms': item.diseaseSymptoms,
         'prevention': item.diseasePrevention,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.rawUpdate(
+        'UPDATE tbl_disease SET name=?, description=?, symptoms=?, prevention=? WHERE id=?',
+        [item.diseaseName, item.diseaseDescription, item.diseaseSymptoms, item.diseasePrevention, diseaseId],
+      );
     }
 
     // Upsert severity level if data provided
@@ -549,7 +562,11 @@ class LocalDb {
         'id': severityLevelId,
         'name': item.severityLevelName,
         'description': item.severityLevelDescription,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.rawUpdate(
+        'UPDATE tbl_severity_level SET name=?, description=? WHERE id=?',
+        [item.severityLevelName, item.severityLevelDescription, severityLevelId],
+      );
     }
 
     // Fallback to old logic if IDs not provided
@@ -818,6 +835,9 @@ class LocalDb {
         final existing = existingScanRows[item.id];
 
         // Upsert tree
+        // USE IGNORE not REPLACE: REPLACE does DELETE+INSERT which triggers
+        // ON DELETE CASCADE on tbl_scan_record.tree_id, cascade-wiping every
+        // scan row for that tree already inserted in this transaction.
         int? treeId = item.treeId;
         if (treeId != null && item.treeName.isNotEmpty) {
           await txn.insert('tbl_tree', {
@@ -825,17 +845,33 @@ class LocalDb {
             'name': item.treeName,
             'location': item.treeLocation,
             'variety': item.treeVariety,
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+          await txn.rawUpdate(
+            'UPDATE tbl_tree SET name=?, location=?, variety=? WHERE id=?',
+            [item.treeName, item.treeLocation, item.treeVariety, treeId],
+          );
           treeCache[item.treeName] = treeId;
         } else if (treeId == null && item.treeName.isNotEmpty) {
           treeId = treeCache[item.treeName];
           if (treeId == null) {
-            treeId = await txn.insert('tbl_tree', {
+            final insertedId = await txn.insert('tbl_tree', {
               'name': item.treeName,
               'location': item.treeLocation,
               'variety': item.treeVariety,
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
-            treeCache[item.treeName] = treeId;
+            }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            if (insertedId > 0) {
+              treeId = insertedId;
+            } else {
+              final rows = await txn.query(
+                'tbl_tree',
+                columns: ['id'],
+                where: 'name = ?',
+                whereArgs: [item.treeName],
+                limit: 1,
+              );
+              treeId = rows.isNotEmpty ? rows.first['id'] as int : null;
+            }
+            if (treeId != null) treeCache[item.treeName] = treeId;
           }
         }
 
@@ -849,15 +885,31 @@ class LocalDb {
             'description': item.diseaseDescription,
             'symptoms': item.diseaseSymptoms,
             'prevention': item.diseasePrevention,
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+          await txn.rawUpdate(
+            'UPDATE tbl_disease SET name=?, description=?, symptoms=?, prevention=? WHERE id=?',
+            [diseaseName, item.diseaseDescription, item.diseaseSymptoms, item.diseasePrevention, diseaseId],
+          );
           diseaseCache[diseaseName] = diseaseId;
         } else if (diseaseId == null && diseaseName.isNotEmpty) {
           diseaseId = diseaseCache[diseaseName];
           if (diseaseId == null) {
-            diseaseId = await txn.insert('tbl_disease', {
+            final insertedId = await txn.insert('tbl_disease', {
               'name': diseaseName,
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
-            diseaseCache[diseaseName] = diseaseId;
+            }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            if (insertedId > 0) {
+              diseaseId = insertedId;
+            } else {
+              final rows = await txn.query(
+                'tbl_disease',
+                columns: ['id'],
+                where: 'name = ?',
+                whereArgs: [diseaseName],
+                limit: 1,
+              );
+              diseaseId = rows.isNotEmpty ? rows.first['id'] as int : null;
+            }
+            if (diseaseId != null) diseaseCache[diseaseName] = diseaseId;
           }
         }
 
