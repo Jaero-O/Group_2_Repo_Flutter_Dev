@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:io';
 import '../../services/local_db.dart';
 import '../../model/scan_item.dart';
+import '../../model/scan_classification.dart';
 
 // SVG folder icon.
 class SvgFolderIcon extends StatelessWidget {
@@ -26,6 +27,7 @@ class SvgFolderIcon extends StatelessWidget {
 class FullScreenPhotoPage extends StatelessWidget {
   final String imageId;
   final String? imagePath;
+  final String? imageUrl;
   final String? disease;
   final String? severityLabel;
   final String? dateScanned;
@@ -34,10 +36,17 @@ class FullScreenPhotoPage extends StatelessWidget {
     super.key,
     required this.imageId,
     this.imagePath,
+    this.imageUrl,
     this.disease,
     this.severityLabel,
     this.dateScanned,
   });
+
+  bool _isRemote(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.startsWith('http://') ||
+        normalized.startsWith('https://');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,20 +56,60 @@ class FullScreenPhotoPage extends StatelessWidget {
       body: Stack(
         children: [
           Center(
-            child:
-                (imagePath != null &&
-                    imagePath!.isNotEmpty &&
-                    File(imagePath!).existsSync())
-                ? Image.file(File(imagePath!), fit: BoxFit.contain)
-                : Text(
-                    imageId,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
+            child: () {
+              final localPath = (imagePath ?? '').trim();
+              final fallbackUrl = (imageUrl ?? '').trim();
+
+              if (localPath.isNotEmpty && !_isRemote(localPath)) {
+                return Image.file(
+                  File(localPath),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    if (fallbackUrl.isNotEmpty && _isRemote(fallbackUrl)) {
+                      return Image.network(
+                        fallbackUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.image_not_supported,
+                          color: Colors.white70,
+                          size: 42,
+                        ),
+                      );
+                    }
+                    return const Icon(
+                      Icons.image_not_supported,
+                      color: Colors.white70,
+                      size: 42,
+                    );
+                  },
+                );
+              }
+
+              final remoteSource = _isRemote(localPath)
+                  ? localPath
+                  : (_isRemote(fallbackUrl) ? fallbackUrl : '');
+              if (remoteSource.isNotEmpty) {
+                return Image.network(
+                  remoteSource,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.image_not_supported,
+                    color: Colors.white70,
+                    size: 42,
                   ),
+                );
+              }
+
+              return Text(
+                imageId,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              );
+            }(),
           ),
 
           if ((disease != null && disease!.isNotEmpty) ||
@@ -155,30 +204,40 @@ class _FolderViewPageState extends State<FolderViewPage> {
   // Use a local state for images so it can be updated after deletion
   late List<dynamic> _currentImages;
   Map<String, String?> _imagePaths = {};
+  Map<String, String?> _imageUrls = {};
   Map<String, ScanItem?> _scanItems = {};
 
   @override
   void initState() {
     super.initState();
-    _currentImages = widget.images;
+    _currentImages = widget.images
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     _loadImagePaths();
   }
 
   Future<void> _loadImagePaths() async {
     final paths = <String, String?>{};
+    final urls = <String, String?>{};
     final scans = <String, ScanItem?>{};
     for (final img in _currentImages) {
-      final id = int.tryParse(img.toString());
+      final key = img.toString().trim();
+      if (key.isEmpty) continue;
+
+      final id = int.tryParse(key);
       if (id != null) {
         final scan = await LocalDb.instance.getScanById(id);
-        paths[img] = scan?.imagePath;
-        scans[img] = scan;
+        paths[key] = scan?.imagePath;
+        urls[key] = scan?.imageUrl;
+        scans[key] = scan;
       }
     }
     if (!mounted) return;
 
     setState(() {
       _imagePaths = paths;
+      _imageUrls = urls;
       _scanItems = scans;
     });
   }
@@ -326,17 +385,33 @@ class _FolderViewPageState extends State<FolderViewPage> {
 
               itemCount: _currentImages.length,
               itemBuilder: (context, index) {
-                final img = _currentImages[index].toString();
+                final img = _currentImages[index].toString().trim();
                 final path = _imagePaths[img];
+                final url = _imageUrls[img]?.trim() ?? '';
                 final scan = _scanItems[img];
+                final localPath = (path ?? '').trim();
+                final isLocalFile =
+                    localPath.isNotEmpty &&
+                    !localPath.startsWith('http://') &&
+                    !localPath.startsWith('https://') &&
+                    File(localPath).existsSync();
+                final networkSource =
+                    localPath.startsWith('http://') ||
+                        localPath.startsWith('https://')
+                    ? localPath
+                    : ((url.startsWith('http://') || url.startsWith('https://'))
+                          ? url
+                          : '');
                 final parsed = DateTime.tryParse(scan?.timestamp ?? '');
                 final dateLabel = parsed == null
                     ? (scan?.timestamp ?? '')
                     : '${parsed.toLocal().year.toString().padLeft(4, '0')}-${parsed.toLocal().month.toString().padLeft(2, '0')}-${parsed.toLocal().day.toString().padLeft(2, '0')}';
-                final diseaseLabel = scan?.diseaseName.isNotEmpty == true
-                    ? scan!.diseaseName
-                    : (scan?.disease ?? '');
-                final severityLabel = scan?.severityLevelName ?? '';
+                final diseaseLabel = scan == null
+                    ? ''
+                    : displayDiseaseName(scan);
+                final severityLabel = scan == null
+                    ? ''
+                    : statusForScan(scan, notApplicableLabel: 'Not Applicable');
 
                 return GestureDetector(
                   // Tap to view full screen
@@ -347,6 +422,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
                         builder: (context) => FullScreenPhotoPage(
                           imageId: img,
                           imagePath: path,
+                          imageUrl: url,
                           disease: diseaseLabel,
                           severityLabel: severityLabel,
                           dateScanned: dateLabel,
@@ -363,18 +439,31 @@ class _FolderViewPageState extends State<FolderViewPage> {
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: path != null && path.isNotEmpty
+                    child: isLocalFile || networkSource.isNotEmpty
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.file(
-                                  File(path),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.image_not_supported),
-                                ),
+                                isLocalFile
+                                    ? Image.file(
+                                        File(localPath),
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(
+                                                  Icons.image_not_supported,
+                                                ),
+                                      )
+                                    : Image.network(
+                                        networkSource,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(
+                                                  Icons.image_not_supported,
+                                                ),
+                                      ),
                                 if (diseaseLabel.isNotEmpty ||
                                     severityLabel.isNotEmpty)
                                   Positioned(

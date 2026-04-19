@@ -3,8 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dataset_widgets.dart';
 import '../gallery/gallery_page.dart';
 
-typedef FolderCreationCallback = void Function(String finalFolderName, List<String> selectedImages);
+typedef FolderCreationCallback =
+    void Function(String finalFolderName, String location, List<String> selectedImages);
 enum FolderAction { rename, delete }
+
+class _DatasetFolderInputResult {
+  final String name;
+  final String location;
+
+  const _DatasetFolderInputResult({required this.name, this.location = ''});
+}
 
 class DatasetDialogs {
   // --- CREATE NEW DATASET DIALOG (SOURCE SELECTION) ---
@@ -77,16 +85,23 @@ class DatasetDialogs {
   }
 
   // --- NAME INPUT DIALOG ---
-  static Future<String?> _showNameInputDialog(
+  static Future<_DatasetFolderInputResult?> _showNameInputDialog(
     BuildContext context, {
     required String title,
     required String actionButtonText,
     String initialName = '',
+    String initialLocation = '',
+    bool includeLocation = false,
     String hintText = 'e.g., My Mango Farm',
   }) async {
-    final TextEditingController controller = TextEditingController(text: initialName);
+    final TextEditingController controller = TextEditingController(
+      text: initialName,
+    );
+    final TextEditingController locationController = TextEditingController(
+      text: initialLocation,
+    );
 
-    return showDialog<String>(
+    return showDialog<_DatasetFolderInputResult>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -130,6 +145,32 @@ class DatasetDialogs {
                     ),
                   ),
                 ),
+                if (includeLocation) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationController,
+                    decoration: InputDecoration(
+                      hintText: 'Location (optional)',
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.grey, width: 1),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF4CAF50),
+                          width: 2.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 Row(
                   children: [
@@ -150,7 +191,16 @@ class DatasetDialogs {
                       child: TextButton(
                         onPressed: () {
                           final name = controller.text.trim();
-                          if (name.isNotEmpty) Navigator.pop(dialogContext, name);
+                          final location = locationController.text.trim();
+                          if (name.isNotEmpty) {
+                            Navigator.pop(
+                              dialogContext,
+                              _DatasetFolderInputResult(
+                                name: name,
+                                location: includeLocation ? location : '',
+                              ),
+                            );
+                          }
                         },
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white,
@@ -172,12 +222,13 @@ class DatasetDialogs {
   }
 
   static Future<String?> showRenameFolderDialog(BuildContext context, String currentName) async {
-    return _showNameInputDialog(
+    final result = await _showNameInputDialog(
       context,
       title: 'Rename Dataset',
       actionButtonText: 'Rename',
       initialName: currentName,
     );
+    return result?.name;
   }
 
   // --- DELETE CONFIRMATION DIALOG (COPIED DESIGN) ---
@@ -329,14 +380,15 @@ class DatasetDialogs {
     );
 
     if (selected != null && selected.isNotEmpty) {
-      final finalFolderName = await _showNameInputDialog(
+      final folderInput = await _showNameInputDialog(
         parentContext, 
         title: 'Create Dataset', 
-        actionButtonText: 'Save'
+        actionButtonText: 'Save',
+        includeLocation: true,
       );
 
-      if (finalFolderName != null && finalFolderName.isNotEmpty) {
-        onFolderCreated(finalFolderName, selected);
+      if (folderInput != null && folderInput.name.isNotEmpty) {
+        onFolderCreated(folderInput.name, folderInput.location, selected);
       }
     }
   }

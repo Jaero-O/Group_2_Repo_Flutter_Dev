@@ -80,17 +80,6 @@ class PrimaryThreatCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'PRIMARY THREAT',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.4,
-              color: Colors.grey[500],
-            ),
-          ),
-          const SizedBox(height: 10),
-
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

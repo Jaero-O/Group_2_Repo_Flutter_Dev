@@ -106,15 +106,18 @@ class SeverityDistributionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int totalScans = summary.totalScans;
+    final int stageTotal =
+        summary.healthyCount +
+        summary.earlyStageCount +
+        summary.advancedStageCount;
 
     int hInt = 0;
     int earlyStageInt = 0;
     int advancedStageInt = 0;
 
-    if (totalScans > 0) {
-      hInt = ((summary.healthyCount / totalScans) * 100).round();
-      earlyStageInt = ((summary.earlyStageCount / totalScans) * 100).round();
+    if (stageTotal > 0) {
+      hInt = ((summary.healthyCount / stageTotal) * 100).round();
+      earlyStageInt = ((summary.earlyStageCount / stageTotal) * 100).round();
       advancedStageInt = 100 - hInt - earlyStageInt;
 
       if (advancedStageInt < 0) {

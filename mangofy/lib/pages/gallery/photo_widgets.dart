@@ -22,10 +22,7 @@ class FullScreenPhotoView extends StatelessWidget {
           // Photo Display Area
           Center(
             child: photo != null
-                ? PhotoGridItem(
-                    photo: photo!,
-                    borderRadius: 0, // No border radius for full screen
-                  )
+                ? _buildFullScreenImage()
                 : Container(
                     // Placeholder for albums or other cases
                     decoration: BoxDecoration(
@@ -214,6 +211,74 @@ class FullScreenPhotoView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildFullScreenImage() {
+    final currentPhoto = photo!;
+    final imagePath = currentPhoto.path?.trim() ?? '';
+    final imageUrl = currentPhoto.imageUrl?.trim() ?? '';
+    final imageData = currentPhoto.data.trim();
+
+    if (imagePath.isNotEmpty) {
+      final isRemotePath =
+          imagePath.startsWith('http://') || imagePath.startsWith('https://');
+      if (isRemotePath) {
+        return Image.network(
+          imagePath,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.image_not_supported, color: Colors.white70),
+        );
+      }
+      return Image.file(
+        File(imagePath),
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) {
+          if (imageUrl.isNotEmpty) {
+            return Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.image_not_supported, color: Colors.white70),
+            );
+          }
+          return const Icon(Icons.image_not_supported, color: Colors.white70);
+        },
+      );
+    }
+
+    if (imageUrl.isNotEmpty) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.image_not_supported, color: Colors.white70),
+      );
+    }
+
+    if (imageData.isNotEmpty) {
+      try {
+        final bytes = base64Decode(imageData);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+        );
+      } catch (_) {
+        return const Icon(Icons.broken_image, color: Colors.white70);
+      }
+    }
+
+    return const Icon(Icons.photo, color: Colors.white70, size: 80);
   }
 }
 

@@ -40,21 +40,9 @@ class DiseaseData {
   });
 }
 
-class SeverityBadge {
-  final String label;
-  final Color bg;
-  final Color text;
-
-  const SeverityBadge({
-    required this.label,
-    required this.bg,
-    required this.text,
-  });
-}
-
 // ── Root card ────────────────────────────────────────────────────────────────
 
-class DiseaseDistributionCard extends StatelessWidget {
+class DiseaseDistributionCard extends StatefulWidget {
   const DiseaseDistributionCard({
     super.key,
     this.totalCases = 100,
@@ -68,7 +56,7 @@ class DiseaseDistributionCard extends StatelessWidget {
     DiseaseData(name: 'Anthracnose',    count: 55, color: Color(0xFFE53935)),
     DiseaseData(name: 'Powdery Mildew', count: 25, color: Color(0xFFFFD600)),
     DiseaseData(name: 'Stem-end Rot',   count: 15, color: Color(0xFF43A047)),
-    DiseaseData(name: 'Others',         count: 5,  color: Color(0xFFBDBDBD)),
+    DiseaseData(name: 'Bacterial Canker', count: 5, color: Color(0xFFFB8C00)),
   ];
 
   static const List<Color> _fallbackColors = [
@@ -92,63 +80,43 @@ class DiseaseDistributionCard extends StatelessWidget {
     return _fallbackColors[index % _fallbackColors.length];
   }
 
-  static const List<SeverityBadge> badges = [
-    SeverityBadge(
-      label: 'Low',
-      bg:   Color(0xFFD6F5D6),
-      text: Color(0xFF2E7D32),
-    ),
-    SeverityBadge(
-      label: 'Moderate',
-      bg:   Color(0xFFFFF9C4),
-      text: Color(0xFFF9A825),
-    ),
-    SeverityBadge(
-      label: 'High',
-      bg:   Color(0xFFFFCDD2),
-      text: Color(0xFFC62828),
-    ),
-    SeverityBadge(
-      label: 'Low',
-      bg:   Color(0xFFD6F5D6),
-      text: Color(0xFF2E7D32),
-    ),
-  ];
+  @override
+  State<DiseaseDistributionCard> createState() => _DiseaseDistributionCardState();
+}
 
-  static const List<_StatItem> defaultStats = [
-    _StatItem(value: '247', label: 'Total Scans'),
-    _StatItem(value: '101', label: 'Healthy'),
-    _StatItem(value: '134', label: 'Diseased'),
-  ];
+class _DiseaseDistributionCardState extends State<DiseaseDistributionCard> {
+  final Set<int> _selectedDiseaseIndices = <int>{};
+
+  void _onDiseaseSelected(int index) {
+    setState(() {
+      if (_selectedDiseaseIndices.contains(index)) {
+        _selectedDiseaseIndices.remove(index);
+      } else {
+        _selectedDiseaseIndices.add(index);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final int total = totalCases > 0 ? totalCases : diseases.fold(0, (sum, item) => sum + item.count);
-    final int healthyCount = diseases
-        .firstWhere(
-          (item) => item.name.toLowerCase() == 'healthy',
-          orElse: () => DiseaseData(name: 'Healthy', count: 0, color: const Color(0xFF1B5E20)),
-        )
-        .count;
-    final int diseasedCount = total - healthyCount;
-    final List<_StatItem> stats = [
-      _StatItem(value: total.toString(), label: 'Total Scans'),
-      _StatItem(value: healthyCount.toString(), label: 'Healthy'),
-      _StatItem(value: diseasedCount.toString(), label: 'Diseased'),
-    ];
+    final int total = widget.totalCases > 0
+        ? widget.totalCases
+        : widget.diseases.fold(0, (sum, item) => sum + item.count);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Disease Distribution',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1B5E20),
-          ),
-        ),
-        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.only(left: 8, bottom: 12),
+            child: Text(
+              'Disease Distribution',
+                  style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF555555),
+                ),
+              ),
+            ),
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -156,7 +124,7 @@ class DiseaseDistributionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -170,7 +138,7 @@ class DiseaseDistributionCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: total count + legend
+                  // Left: total count
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,38 +160,6 @@ class DiseaseDistributionCard extends StatelessWidget {
                             letterSpacing: 1.1,
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        // Legend rows
-                        for (int i = 0; i < diseases.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                _SeverityPill(badge: badges[i % badges.length]),
-                                const SizedBox(width: 8),
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    color: diseases[i].color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    diseases[i].name,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF212121),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -236,8 +172,9 @@ class DiseaseDistributionCard extends StatelessWidget {
                       height: 130,
                       child: CustomPaint(
                         painter: _DonutPainter(
-                          diseases: diseases,
+                          diseases: widget.diseases,
                           total: total,
+                          selectedIndices: _selectedDiseaseIndices,
                         ),
                       ),
                     ),
@@ -247,18 +184,33 @@ class DiseaseDistributionCard extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // ── Stats row ──
-              Row(
-                children: stats
-                    .map(
-                      (s) => Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: _StatCard(item: s),
-                        ),
-                      ),
-                    )
-                    .toList(),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final itemWidth = (constraints.maxWidth - 12) / 2;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: widget.diseases
+                        .asMap()
+                        .entries
+                        .map(
+                          (entry) => SizedBox(
+                            width: itemWidth,
+                            child: _LegendItem(
+                              disease: entry.value,
+                              total: total,
+                              isSelected: _selectedDiseaseIndices.contains(
+                                entry.key,
+                              ),
+                              hasActiveSelection:
+                                  _selectedDiseaseIndices.isNotEmpty,
+                              onTap: () => _onDiseaseSelected(entry.key),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
               ),
             ],
           ),
@@ -268,78 +220,87 @@ class DiseaseDistributionCard extends StatelessWidget {
   }
 }
 
-// ── Severity pill ─────────────────────────────────────────────────────────────
+class _LegendItem extends StatelessWidget {
+  final DiseaseData disease;
+  final int total;
+  final bool isSelected;
+  final bool hasActiveSelection;
+  final VoidCallback onTap;
 
-class _SeverityPill extends StatelessWidget {
-  final SeverityBadge badge;
-  const _SeverityPill({required this.badge});
+  const _LegendItem({
+    required this.disease,
+    required this.total,
+    required this.isSelected,
+    required this.hasActiveSelection,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: badge.bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: SizedBox(
-        width: 84,
-        child: Center(
-          child: Text(
-            badge.label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: badge.text,
+    final double percent = total > 0 ? (disease.count / total) * 100 : 0;
+    final shouldGrayOut = hasActiveSelection && !isSelected;
+    const lightGray = Color(0xFFCDCDCD);
+    final markerColor = shouldGrayOut ? lightGray : disease.color;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? const Color(0xFFE8F5E9)
+                : shouldGrayOut
+                ? const Color(0xFFF1F1F1)
+                : const Color(0xFFF7FAF7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? disease.color : Colors.transparent,
+              width: 1.2,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(top: 4),
+                decoration: BoxDecoration(
+                  color: markerColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      disease.name,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF1F1F1F),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${disease.count} cases (${percent.toStringAsFixed(1)}%)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF616161),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-class _StatItem {
-  final String value;
-  final String label;
-  const _StatItem({required this.value, required this.label});
-}
-
-class _StatCard extends StatelessWidget {
-  final _StatItem item;
-  const _StatCard({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEBF5E9),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Text(
-            item.value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1B5E20),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            item.label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF388E3C),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -350,8 +311,13 @@ class _StatCard extends StatelessWidget {
 class _DonutPainter extends CustomPainter {
   final List<DiseaseData> diseases;
   final int total;
+  final Set<int> selectedIndices;
 
-  const _DonutPainter({required this.diseases, required this.total});
+  const _DonutPainter({
+    required this.diseases,
+    required this.total,
+    required this.selectedIndices,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -359,24 +325,34 @@ class _DonutPainter extends CustomPainter {
 
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2;
-    const strokeWidth = 22.0;
-    final rect = Rect.fromCircle(
-      center: center,
-      radius: radius - strokeWidth / 2,
-    );
+    const double baseStrokeWidth = 22.0;
+    final safeRadius = radius - (baseStrokeWidth / 2) - 1;
 
     double startAngle = -math.pi / 2;
     const double gap = 0.04;
+    const lightGray = Color(0xFFCDCDCD);
 
-    for (final d in diseases) {
+    for (int i = 0; i < diseases.length; i++) {
+      final d = diseases[i];
       final sweep = (d.count / total) * 2 * math.pi;
+
+      final isSelected = selectedIndices.contains(i);
+      final shouldGrayOut = selectedIndices.isNotEmpty && !isSelected;
+        final segmentColor = shouldGrayOut ? lightGray : d.color;
+
+      final strokeWidth = baseStrokeWidth;
+      final rect = Rect.fromCircle(
+        center: center,
+        radius: safeRadius,
+      );
+
       canvas.drawArc(
         rect,
         startAngle + gap / 2,
         sweep - gap,
         false,
         Paint()
-          ..color = d.color
+          ..color = segmentColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = strokeWidth
           ..strokeCap = StrokeCap.butt,
@@ -386,5 +362,11 @@ class _DonutPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
+  bool shouldRepaint(covariant _DonutPainter old) {
+    return old.diseases != diseases ||
+        old.total != total ||
+        old.selectedIndices.length != selectedIndices.length ||
+        !old.selectedIndices.containsAll(selectedIndices) ||
+        !selectedIndices.containsAll(old.selectedIndices);
+  }
 }

@@ -208,6 +208,13 @@ class PhotoGridContent extends StatelessWidget {
 
     // If timestamps are missing/unparseable, fall back to all-photos.
     if (datedPhotos.isEmpty) {
+      if (undatedPhotos.isNotEmpty) {
+        undatedPhotos.sort(_comparePhotosByTimestampDesc);
+        return [
+          _buildGroupedColumn(context, 'Undated', undatedPhotos),
+        ];
+      }
+
       return [
         Padding(
           padding: const EdgeInsets.only(top: 24),

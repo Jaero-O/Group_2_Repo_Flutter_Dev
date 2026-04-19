@@ -38,10 +38,10 @@ class ScanDetailsPage extends StatelessWidget {
   });
 
   static const String kLongDescription =
-      'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.';
+      'No description available for this disease yet.';
 
   static const String kRecommendedActions =
-      'Apply a broad-spectrum fungicide (such as chlorothalonil or mancozeb) every 7-14 days. Ensure proper tree pruning to improve air circulation and sunlight penetration. Rake and dispose of all fallen infected leaves to reduce the source of fungal spores.';
+      'No prevention notes are available for this disease yet.';
 
   Widget _buildCustomAppBar(BuildContext context) {
     return Container(

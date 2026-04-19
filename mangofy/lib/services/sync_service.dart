@@ -8,6 +8,7 @@ import 'hotspot_service.dart';
 import 'local_db.dart';
 import 'pi_api.dart';
 import 'pi_bundle_service.dart';
+import 'device_notification_service.dart';
 import 'package:flutter/foundation.dart';
 
 class SyncProgress {
@@ -87,6 +88,16 @@ class SyncService {
     }
     try {
       await _processScans(scans);
+      final now = DateTime.now().toUtc();
+      await _setLastSyncAt(now);
+      lastSyncNotifier.value = now;
+      await DeviceNotificationService.instance.notifySyncSummary(
+        importedScans: scans.length,
+        failures: diagnosticsNotifier.value?.failures ?? 0,
+      );
+      await DeviceNotificationService.instance.notifyRiskIfHigh(
+        sourceLabel: 'sync',
+      );
     } catch (e) {
       progressNotifier.value = null;
       rethrow;
@@ -218,9 +229,9 @@ class SyncService {
         final latestImported = await LocalDb.instance.getLatestScanDate();
         final topUpSinceIso = latestImported == null
             ? null
-            : DateTime.tryParse(latestImported.replaceFirst(' ', 'T'))
-                  ?.toUtc()
-                  .toIso8601String();
+            : DateTime.tryParse(
+                latestImported.replaceFirst(' ', 'T'),
+              )?.toUtc().toIso8601String();
 
         if (topUpSinceIso != null) {
           progressNotifier.value = const SyncProgress(
@@ -259,16 +270,6 @@ class SyncService {
             lastSyncAt.toIso8601String(),
             endpoints: endpoints,
           );
-          // If incremental fetch returns suspiciously empty, force full sync for Kivy parity
-          if (scans.isEmpty) {
-            debugPrint(
-              'Incremental sync returned no scans; falling back to full sync.',
-            );
-            scans = await PiApi.instance.getScansAll(
-              accessUrl,
-              endpoints: endpoints,
-            );
-          }
         } else {
           scans = await PiApi.instance.getScansAll(
             accessUrl,
@@ -359,6 +360,13 @@ class SyncService {
       final now = DateTime.now().toUtc();
       await _setLastSyncAt(now);
       lastSyncNotifier.value = now;
+      await DeviceNotificationService.instance.notifySyncSummary(
+        importedScans: diagnostics.scansFetched,
+        failures: diagnostics.failures,
+      );
+      await DeviceNotificationService.instance.notifyRiskIfHigh(
+        sourceLabel: 'sync',
+      );
     }
     progressNotifier.value = null; // Clear progress on success
     return true;
@@ -431,34 +439,45 @@ class SyncService {
     await photosDir.create(recursive: true);
     final importable = await LocalDb.instance.getScanImageCandidates();
 
-    await Future.wait(importable.map((row) async {
-      final scanId = row['id'] as int;
-      final imagePath = row['image_path'] as String? ?? '';
-      final imageUrl = row['image_url'] as String? ?? '';
-      final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
-      if (imageRef.isEmpty) return;
+    await Future.wait(
+      importable.map((row) async {
+        final scanId = row['id'] as int;
+        final imagePath = row['image_path'] as String? ?? '';
+        final imageUrl = row['image_url'] as String? ?? '';
+        final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
+        if (imageRef.isEmpty) return;
 
-      final existing = File(imagePath);
-      if (await existing.exists()) return;
+        final existing = File(imagePath);
+        if (await existing.exists()) return;
 
-      final fileName = _extractImageFileName(imageRef) ?? '';
-      if (fileName.isEmpty) return;
+        final fileName = _extractImageFileName(imageRef) ?? '';
+        if (fileName.isEmpty) return;
 
-      final localFileName = 'scan_${scanId}_$fileName';
-      final candidate = File('${docs.path}/$localFileName');
-      final legacyCandidate = File('${docs.path}/$fileName');
-      final candidateInPhotos = File(join(photosDir.path, localFileName));
-      final legacyCandidateInPhotos = File(join(photosDir.path, fileName));
-      if (await candidateInPhotos.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, candidateInPhotos.path);
-      } else if (await legacyCandidateInPhotos.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, legacyCandidateInPhotos.path);
-      } else if (await candidate.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, candidate.path);
-      } else if (await legacyCandidate.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, legacyCandidate.path);
-      }
-    }));
+        final localFileName = 'scan_${scanId}_$fileName';
+        final candidate = File('${docs.path}/$localFileName');
+        final legacyCandidate = File('${docs.path}/$fileName');
+        final candidateInPhotos = File(join(photosDir.path, localFileName));
+        final legacyCandidateInPhotos = File(join(photosDir.path, fileName));
+        if (await candidateInPhotos.exists()) {
+          await LocalDb.instance.updateScanImagePath(
+            scanId,
+            candidateInPhotos.path,
+          );
+        } else if (await legacyCandidateInPhotos.exists()) {
+          await LocalDb.instance.updateScanImagePath(
+            scanId,
+            legacyCandidateInPhotos.path,
+          );
+        } else if (await candidate.exists()) {
+          await LocalDb.instance.updateScanImagePath(scanId, candidate.path);
+        } else if (await legacyCandidate.exists()) {
+          await LocalDb.instance.updateScanImagePath(
+            scanId,
+            legacyCandidate.path,
+          );
+        }
+      }),
+    );
   }
 
   Future<void> _hydrateImportedScanImages(
@@ -475,49 +494,52 @@ class SyncService {
     final pending = <Map<String, dynamic>>[];
     final pendingCandidates = await Future.wait(
       importable.map((row) async {
-      final scanId = row['id'] as int;
-      final imagePath = row['image_path'] as String? ?? '';
-      final imageUrl = row['image_url'] as String? ?? '';
-      final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
-      if (imageRef.isEmpty) return null;
+        final scanId = row['id'] as int;
+        final imagePath = row['image_path'] as String? ?? '';
+        final imageUrl = row['image_url'] as String? ?? '';
+        final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
+        if (imageRef.isEmpty) return null;
 
-      final existing = File(imagePath);
-      if (await existing.exists()) return null;
+        final existing = File(imagePath);
+        if (await existing.exists()) return null;
 
-      final fileName = _extractImageFileName(imageRef) ?? '';
-      if (fileName.isEmpty) return null;
+        final fileName = _extractImageFileName(imageRef) ?? '';
+        if (fileName.isEmpty) return null;
 
-      final localFileName = 'scan_${scanId}_$fileName';
+        final localFileName = 'scan_${scanId}_$fileName';
 
-      final inPhotos = File(join(photosDir.path, localFileName));
-      if (await inPhotos.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, inPhotos.path);
-        return null;
-      }
+        final inPhotos = File(join(photosDir.path, localFileName));
+        if (await inPhotos.exists()) {
+          await LocalDb.instance.updateScanImagePath(scanId, inPhotos.path);
+          return null;
+        }
 
-      final inPhotosLegacy = File(join(photosDir.path, fileName));
-      if (await inPhotosLegacy.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, inPhotosLegacy.path);
-        return null;
-      }
+        final inPhotosLegacy = File(join(photosDir.path, fileName));
+        if (await inPhotosLegacy.exists()) {
+          await LocalDb.instance.updateScanImagePath(
+            scanId,
+            inPhotosLegacy.path,
+          );
+          return null;
+        }
 
-      final inDocs = File(join(docs.path, localFileName));
-      if (await inDocs.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, inDocs.path);
-        return null;
-      }
+        final inDocs = File(join(docs.path, localFileName));
+        if (await inDocs.exists()) {
+          await LocalDb.instance.updateScanImagePath(scanId, inDocs.path);
+          return null;
+        }
 
-      final inDocsLegacy = File(join(docs.path, fileName));
-      if (await inDocsLegacy.exists()) {
-        await LocalDb.instance.updateScanImagePath(scanId, inDocsLegacy.path);
-        return null;
-      }
+        final inDocsLegacy = File(join(docs.path, fileName));
+        if (await inDocsLegacy.exists()) {
+          await LocalDb.instance.updateScanImagePath(scanId, inDocsLegacy.path);
+          return null;
+        }
 
-      return {
-        'scanId': scanId,
-        'remoteFileName': fileName,
-        'localFileName': localFileName,
-      };
+        return {
+          'scanId': scanId,
+          'remoteFileName': fileName,
+          'localFileName': localFileName,
+        };
       }),
     );
     pending.addAll(pendingCandidates.whereType<Map<String, dynamic>>());
@@ -534,7 +556,8 @@ class SyncService {
     if (bulkHydratedPaths.isNotEmpty) {
       await Future.wait(
         bulkHydratedPaths.entries.map(
-          (entry) => LocalDb.instance.updateScanImagePath(entry.key, entry.value),
+          (entry) =>
+              LocalDb.instance.updateScanImagePath(entry.key, entry.value),
         ),
       );
       pending.removeWhere(
@@ -611,7 +634,7 @@ class SyncService {
       stage: 'Processing',
       completedUnits: completedUnits,
       totalUnits: totalUnits,
-      message: 'Processing $scanCount scans…',
+      message: 'Syncing $scanCount scans from Pi…',
     );
 
     // Batch upsert all scans first
@@ -621,7 +644,7 @@ class SyncService {
       stage: 'Processing',
       completedUnits: completedUnits,
       totalUnits: totalUnits,
-      message: 'Processed $scanCount scans…',
+      message: 'Synced $scanCount scans from Pi.',
     );
 
     final docsDir = await getApplicationDocumentsDirectory();
@@ -652,7 +675,8 @@ class SyncService {
     if (bulkDownloadedPaths.isNotEmpty) {
       await Future.wait(
         bulkDownloadedPaths.entries.map(
-          (entry) => LocalDb.instance.updateScanImagePath(entry.key, entry.value),
+          (entry) =>
+              LocalDb.instance.updateScanImagePath(entry.key, entry.value),
         ),
       );
     }
@@ -675,7 +699,9 @@ class SyncService {
         }
 
         final uniqueFileName = 'scan_${remote.id}_${basename(localPath)}';
-        final fileName = preDownloadedPath == null ? uniqueFileName : basename(localPath);
+        final fileName = preDownloadedPath == null
+            ? uniqueFileName
+            : basename(localPath);
         final permanentPath = join(photosDir.path, fileName);
         String updatedImagePath = localPath;
         if (localPath != permanentPath) {
@@ -699,25 +725,23 @@ class SyncService {
           photoName,
           photoTimestamp,
         );
-        if (photoId == null) {
-          photoId = await LocalDb.instance.insertPhoto(
-            name: photoName,
-            data: '',
-            path: updatedImagePath,
-            timestamp: photoTimestamp,
-            title: remote.title,
-            description: remote.description,
-            imageUrl: remote.imageUrl,
-            checksum: remote.checksum,
-            source: remote.source,
-            updatedAt: remote.updatedAt,
-            disease: remote.disease,
-            confidence: remote.confidence,
-            severityValue: remote.severityValue,
-            photoId: remote.photoId,
-            scanDir: remote.scanDir,
-          );
-        }
+        photoId ??= await LocalDb.instance.insertPhoto(
+          name: photoName,
+          data: '',
+          path: updatedImagePath,
+          timestamp: photoTimestamp,
+          title: remote.title,
+          description: remote.description,
+          imageUrl: remote.imageUrl,
+          checksum: remote.checksum,
+          source: remote.source,
+          updatedAt: remote.updatedAt,
+          disease: remote.disease,
+          confidence: remote.confidence,
+          severityValue: remote.severityValue,
+          photoId: remote.photoId,
+          scanDir: remote.scanDir,
+        );
         if (photoId > 0) {
           diagnostics.photosInserted++;
         }
@@ -739,11 +763,7 @@ class SyncService {
       }
     }
 
-    for (
-      int i = 0;
-      i < scansWithImages.length;
-      i += _imageImportConcurrency
-    ) {
+    for (int i = 0; i < scansWithImages.length; i += _imageImportConcurrency) {
       final chunk = scansWithImages.sublist(
         i,
         (i + _imageImportConcurrency) > scansWithImages.length

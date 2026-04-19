@@ -6,6 +6,7 @@ import '../../ui/green_header_background.dart';
 import '../../services/local_db.dart';
 import '../../services/sync_service.dart';
 import '../../model/scan_item.dart';
+import '../../model/scan_classification.dart';
 
 // Displays history of leaf scans, fetching data from the database.
 class ScanPage extends StatefulWidget {
@@ -17,7 +18,7 @@ class ScanPage extends StatefulWidget {
 
 enum SortOption { dateNewest, dateOldest, severityHigh, severityLow }
 
-enum FilterOption { all, healthy, earlyStage, advancedStage }
+enum FilterOption { all, healthy, earlyStage, advancedStage, notApplicable }
 
 class _ScanPageState extends State<ScanPage> {
   // State variables
@@ -30,6 +31,9 @@ class _ScanPageState extends State<ScanPage> {
   // Sort and Filter state
   SortOption _currentSort = SortOption.dateNewest;
   FilterOption _currentFilter = FilterOption.all;
+  String? _selectedDisease;
+  List<String> _availableDiseases = [];
+  bool _hasUserChangedDiseaseFilter = false;
 
   @override
   void initState() {
@@ -48,100 +52,27 @@ class _ScanPageState extends State<ScanPage> {
     _loadScanHistory();
   }
 
-  String _normalizeSeverityLabel(String raw) {
-    final value = raw.trim().toLowerCase();
-    if (value.isEmpty) return '';
-    if (value == 'none') return '';
-    if (value.contains('healthy')) return 'Healthy';
-    if (value == 'high') return 'Advanced Stage';
-    if (value == 'low' || value == 'trace') return 'Early Stage';
-    if (value.contains('advanced') ||
-        value.contains('severe') ||
-        value.contains('critical')) {
-      return 'Advanced Stage';
-    }
-    if (value.contains('early') ||
-        value.contains('moderate') ||
-        value.contains('mid')) {
-      return 'Early Stage';
-    }
-    return raw.trim();
-  }
-
   String _statusKeyFor(ScanItem item) {
-    final status = _statusFor(item).trim().toLowerCase();
-    if (status.contains('healthy')) return 'healthy';
-    if (status.contains('advanced') ||
-        status.contains('severe') ||
-        status.contains('critical')) {
-      return 'advanced_stage';
-    }
-    if (status.contains('early') ||
-        status.contains('moderate') ||
-        status.contains('mid')) {
-      return 'early_stage';
-    }
-    return status.replaceAll(' ', '_');
+    return statusKeyForScan(
+      item,
+      notApplicableKey: 'not_applicable',
+      notApplicableLabel: '--',
+    );
   }
 
   String _statusFor(ScanItem item) {
-    final level = _normalizeSeverityLabel(item.severityLevelName);
-    const knownStatuses = {'Healthy', 'Early Stage', 'Advanced Stage'};
-    if (level.isNotEmpty && knownStatuses.contains(level)) return level;
-    final disease = _displayDiseaseName(item).toLowerCase();
-    if (disease == 'healthy') return 'Healthy';
-
-    final v = item.severityValue;
-    if (v > 40.0) return 'Advanced Stage';
-    if (v > 5.0) return 'Early Stage';
-
-    // Pi imports can mark a disease while leaving computed severity at 0.
-    if (disease.isNotEmpty && disease != 'healthy' && disease != 'unknown disease') {
-      return 'Early Stage';
-    }
-
-    return 'Healthy';
+    return statusForScan(item, notApplicableLabel: '--');
   }
 
-  bool _isGenericDetectionLabel(String value) {
-    final normalized = value.trim().toLowerCase();
-    if (normalized.isEmpty) return true;
-    return normalized == 'imported dataset' ||
-      normalized == 'dataset' ||
-      normalized == 'image detected' ||
-        normalized == 'imported dataset detected' ||
-        normalized == 'dataset detected';
+  String _statusForSummary(ScanItem item) {
+    return statusForScan(
+      item,
+      anthracnoseOnly: false,
+      notApplicableLabel: '--',
+    );
   }
 
-  String _formatDiseaseClass(String raw) {
-    final normalized = raw.trim().replaceAll(RegExp(r'[_-]+'), ' ');
-    if (normalized.isEmpty) return '';
-    final words = normalized.split(RegExp(r'\s+'));
-    return words
-        .where((w) => w.isNotEmpty)
-        .map((w) => '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
-        .join(' ');
-  }
-
-  String _displayDiseaseName(ScanItem item) {
-    final canonical = item.diseaseName.trim();
-    if (canonical.isNotEmpty && !_isGenericDetectionLabel(canonical)) {
-      return canonical;
-    }
-
-    final formattedClass = _formatDiseaseClass(item.diseaseClass);
-    if (formattedClass.isNotEmpty && !_isGenericDetectionLabel(formattedClass)) {
-      return formattedClass;
-    }
-
-    final formattedFallback = _formatDiseaseClass(item.disease);
-    if (formattedFallback.isNotEmpty &&
-        !_isGenericDetectionLabel(formattedFallback)) {
-      return formattedFallback;
-    }
-
-    return 'Unknown Disease';
-  }
+  String _displayDiseaseName(ScanItem item) => displayDiseaseName(item);
 
   String _scanSubtitleFor(ScanItem item) {
     final name = item.treeName.trim();
@@ -164,6 +95,10 @@ class _ScanPageState extends State<ScanPage> {
       case 'advanced stage':
       case 'severe':
         return const Color(0xFFF44336);
+      case '--':
+      case 'n/a':
+      case 'not applicable':
+        return Colors.grey;
       default:
         return Colors.grey;
     }
@@ -207,13 +142,23 @@ class _ScanPageState extends State<ScanPage> {
   List<ScanItem> _buildFilteredAndSorted(List<ScanItem> source) {
     final filteredList = List<ScanItem>.from(source);
 
+    if (_selectedDisease != null) {
+      filteredList.retainWhere(
+        (record) => _displayDiseaseName(record) == _selectedDisease,
+      );
+    }
+
     if (_currentFilter != FilterOption.all) {
       final String filterStatus = _currentFilter == FilterOption.healthy
           ? 'healthy'
           : _currentFilter == FilterOption.earlyStage
           ? 'early_stage'
+          : _currentFilter == FilterOption.notApplicable
+          ? 'not_applicable'
           : 'advanced_stage';
-      filteredList.retainWhere((record) => _statusKeyFor(record) == filterStatus);
+      filteredList.retainWhere(
+        (record) => _statusKeyFor(record) == filterStatus,
+      );
     }
 
     filteredList.sort((a, b) {
@@ -253,6 +198,27 @@ class _ScanPageState extends State<ScanPage> {
       if (mounted) {
         setState(() {
           _scanHistory = history;
+          _availableDiseases =
+              history
+                  .map(_displayDiseaseName)
+                  .where((name) => name.isNotEmpty && name != 'Unknown Disease')
+                  .toSet()
+                  .toList()
+                ..sort();
+          if (_selectedDisease != null &&
+              !_availableDiseases.contains(_selectedDisease)) {
+            _selectedDisease = null;
+          }
+
+          if (!_hasUserChangedDiseaseFilter && _selectedDisease == null) {
+            for (final disease in _availableDiseases) {
+              if (disease.toLowerCase().contains('anthracnose')) {
+                _selectedDisease = disease;
+                break;
+              }
+            }
+          }
+
           _displayScanHistory = _buildFilteredAndSorted(history);
           _isLoading = false;
         });
@@ -317,6 +283,7 @@ class _ScanPageState extends State<ScanPage> {
             FilterOption.healthy: 'Healthy',
             FilterOption.earlyStage: 'Early Stage',
             FilterOption.advancedStage: 'Advanced Stage',
+            FilterOption.notApplicable: 'Not Applicable',
           },
           onSelect: (option) {
             setState(() {
@@ -328,7 +295,78 @@ class _ScanPageState extends State<ScanPage> {
         );
       },
     );
-    }
+  }
+
+  void _showDiseaseOptions() {
+    final options = <String?>[null, ..._availableDiseases];
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+      ),
+      builder: (BuildContext context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Filter by Disease',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF005200),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              ...options.map((option) {
+                final isSelected = option == _selectedDisease;
+                final label = option ?? 'All Diseases';
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 0.5),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _hasUserChangedDiseaseFilter = true;
+                        _selectedDisease = option;
+                        _applySortAndFilter();
+                      });
+                      Navigator.pop(context);
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    highlightColor: Colors.grey.withValues(alpha: 0.1),
+                    splashColor: Colors.grey.withValues(alpha: 0.05),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Colors.grey[200]
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildOptionsSheet<T extends Enum>({
     required String title,
@@ -371,8 +409,8 @@ class _ScanPageState extends State<ScanPage> {
                 onTap: () => onSelect(option),
                 borderRadius: BorderRadius.circular(12),
                 // Hover/Pressed feedback color
-                highlightColor: Colors.grey.withOpacity(0.1),
-                splashColor: Colors.grey.withOpacity(0.05),
+                highlightColor: Colors.grey.withValues(alpha: 0.1),
+                splashColor: Colors.grey.withValues(alpha: 0.05),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -394,7 +432,7 @@ class _ScanPageState extends State<ScanPage> {
                 ),
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -402,14 +440,20 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate Summary Stats
-    final int totalScans = _scanHistory.length;
-    // Count items where status is explicitly 'Healthy'
-    final int healthyScans = _scanHistory
-        .where((record) => _statusFor(record) == 'Healthy')
+    // Calculate Summary Stats based on the selected disease type.
+    final List<ScanItem> statsSource = _selectedDisease == null
+        ? _scanHistory
+        : _scanHistory
+            .where((record) => _displayDiseaseName(record) == _selectedDisease)
+            .toList();
+    final int totalScans = statsSource.length;
+    final int healthyScans = statsSource
+        .where((record) => _statusForSummary(record) == 'Healthy')
         .length;
-    // Infected - Moderate + Severe
-    final int infectedScans = totalScans - healthyScans;
+    final int infectedScans = statsSource.where((record) {
+      final status = _statusForSummary(record);
+      return status == 'Early Stage' || status == 'Advanced Stage';
+    }).length;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -592,25 +636,35 @@ class _ScanPageState extends State<ScanPage> {
             right: 0,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _buildFilterButton(
-                    _getSortLabel(),
-                    Icons.sort,
-                    onPressed: _showSortOptions,
-                    backgroundColor: const Color(0xFF007700),
-                  ),
-                  const SizedBox(width: 8),
-                  _buildFilterButton(
-                    _getFilterLabel(),
-                    Icons.filter_list,
-                    onPressed: _showFilterOptions,
-                    // Keep the background color constant regardless of filter state
-                    backgroundColor: const Color(0xFF007700),
-                  ),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    _buildFilterButton(
+                      _getDiseaseLabel(),
+                      Icons.eco_outlined,
+                      onPressed: _showDiseaseOptions,
+                      backgroundColor: _selectedDisease != null
+                          ? const Color(0xFF004D00)
+                          : const Color(0xFF007700),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterButton(
+                      _getSortLabel(),
+                      Icons.sort,
+                      onPressed: _showSortOptions,
+                      backgroundColor: const Color(0xFF007700),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterButton(
+                      _getFilterLabel(),
+                      Icons.filter_list,
+                      onPressed: _showFilterOptions,
+                      backgroundColor: const Color(0xFF007700),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -644,7 +698,16 @@ class _ScanPageState extends State<ScanPage> {
         return 'Filter: Early';
       case FilterOption.advancedStage:
         return 'Filter: Advanced';
+      case FilterOption.notApplicable:
+        return 'Filter: N/A';
     }
+  }
+
+  String _getDiseaseLabel() {
+    if (_selectedDisease == null) return 'Type: All';
+    final name = _selectedDisease!;
+    if (name.length <= 10) return 'Type: $name';
+    return 'Type: ${name.substring(0, 10)}...';
   }
 
   Widget _buildSummaryCard({

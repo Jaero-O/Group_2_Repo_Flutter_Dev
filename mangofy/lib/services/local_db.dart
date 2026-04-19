@@ -5,11 +5,16 @@ import 'dart:io';
 import '../model/scan_item.dart';
 import '../model/scan_summary_model.dart';
 import '../model/dataset_folder_model.dart';
+import '../model/action_item.dart';
+import '../model/orchard_snapshot.dart';
+import '../model/scan_classification.dart';
+import '../model/weather_data.dart';
 
 class LocalDb {
   LocalDb._();
   static final LocalDb instance = LocalDb._();
-  static const String _legacyDataMigrationFlag = 'legacy_local_db_data_migrated_v1';
+  static const String _legacyDataMigrationFlag =
+      'legacy_local_db_data_migrated_v1';
 
   Database? _db;
 
@@ -29,7 +34,7 @@ class LocalDb {
 
     final db = await openDatabase(
       path,
-      version: 5,
+      version: 8,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -159,8 +164,41 @@ class LocalDb {
           CREATE TABLE tbl_dataset_folders(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            location TEXT NOT NULL DEFAULT '',
             images TEXT NOT NULL,
             date_created TEXT NOT NULL
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE tbl_action_library(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            disease_keyword TEXT NOT NULL,
+            severity_trigger TEXT NOT NULL DEFAULT 'all',
+            trend_trigger TEXT NOT NULL DEFAULT 'any',
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            icon_code INTEGER NOT NULL,
+            color_hex TEXT NOT NULL DEFAULT '#2E7D32',
+            priority INTEGER NOT NULL DEFAULT 100,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE tbl_weather_cache(
+            id INTEGER PRIMARY KEY,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            fetched_at TEXT NOT NULL,
+            temp_c REAL NOT NULL,
+            humidity_pct REAL NOT NULL,
+            rainfall_mm REAL NOT NULL,
+            wind_speed REAL NOT NULL,
+            condition TEXT NOT NULL,
+            raw_json TEXT NOT NULL
           )
         ''');
 
@@ -195,6 +233,12 @@ class LocalDb {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_photos_name_timestamp ON tbl_photos(name, timestamp)',
         );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_action_lookup ON tbl_action_library(disease_keyword, severity_trigger, trend_trigger, is_active, priority)',
+        );
+
+        await _seedKnownDiseases(db);
+        await _seedActionLibrary(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -239,10 +283,66 @@ class LocalDb {
             CREATE TABLE IF NOT EXISTS tbl_dataset_folders(
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               name TEXT NOT NULL UNIQUE,
+              location TEXT NOT NULL DEFAULT '',
               images TEXT NOT NULL,
               date_created TEXT NOT NULL
             )
           ''');
+        }
+        if (oldVersion < 6) {
+          final datasetFolderCols = await db.rawQuery(
+            'PRAGMA table_info(tbl_dataset_folders)',
+          );
+          final hasLocationColumn = datasetFolderCols.any(
+            (row) => row['name'] == 'location',
+          );
+          if (!hasLocationColumn) {
+            await db.execute(
+              "ALTER TABLE tbl_dataset_folders ADD COLUMN location TEXT NOT NULL DEFAULT ''",
+            );
+          }
+        }
+        if (oldVersion < 7) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS tbl_action_library(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              disease_keyword TEXT NOT NULL,
+              severity_trigger TEXT NOT NULL DEFAULT 'all',
+              trend_trigger TEXT NOT NULL DEFAULT 'any',
+              title TEXT NOT NULL,
+              description TEXT NOT NULL,
+              icon_code INTEGER NOT NULL,
+              color_hex TEXT NOT NULL DEFAULT '#2E7D32',
+              priority INTEGER NOT NULL DEFAULT 100,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS tbl_weather_cache(
+              id INTEGER PRIMARY KEY,
+              latitude REAL NOT NULL,
+              longitude REAL NOT NULL,
+              fetched_at TEXT NOT NULL,
+              temp_c REAL NOT NULL,
+              humidity_pct REAL NOT NULL,
+              rainfall_mm REAL NOT NULL,
+              wind_speed REAL NOT NULL,
+              condition TEXT NOT NULL,
+              raw_json TEXT NOT NULL
+            )
+          ''');
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_action_lookup ON tbl_action_library(disease_keyword, severity_trigger, trend_trigger, is_active, priority)',
+          );
+          await _seedActionLibrary(db);
+        }
+        if (oldVersion < 8) {
+          await _seedKnownDiseases(db);
+          await _repairScanDiseaseForeignKeys(db);
+          await _repairLegacyDatasetFolderImageIds(db);
+          await _refreshDefaultActionLibraryContent(db);
         }
       },
     );
@@ -286,6 +386,7 @@ class LocalDb {
             if (name.isEmpty) continue;
             await db.insert('tbl_dataset_folders', {
               'name': name,
+              'location': row['location']?.toString() ?? '',
               'images': row['images']?.toString() ?? '',
               'date_created':
                   row['date_created']?.toString() ??
@@ -306,7 +407,8 @@ class LocalDb {
               'title': title,
               'location': row['location']?.toString() ?? '',
               'images': row['images']?.toString() ?? '',
-              'cover_image': row['cover_image']?.toString() ?? 'images/leaf.png',
+              'cover_image':
+                  row['cover_image']?.toString() ?? 'images/leaf.png',
             }, conflictAlgorithm: ConflictAlgorithm.ignore);
           }
         }
@@ -317,6 +419,428 @@ class LocalDb {
       await prefs.setBool(_legacyDataMigrationFlag, true);
     } catch (_) {
       // Best-effort migration; keep app startup resilient.
+    }
+  }
+
+  String? _nonEmptyOrNull(String? value) {
+    final trimmed = (value ?? '').trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  String _canonicalDiseaseName(String raw) {
+    final normalized = raw
+        .trim()
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .toLowerCase();
+    if (normalized.isEmpty || isGenericDetectionLabel(normalized)) return '';
+    if (normalized == 'unknown disease' || normalized == 'unknown') return '';
+    if (normalized.contains('anthracnose')) return 'Anthracnose';
+    if (normalized.contains('powdery') && normalized.contains('mildew')) {
+      return 'Powdery Mildew';
+    }
+    if (normalized.contains('stem') && normalized.contains('rot')) {
+      return 'Stem-End Rot';
+    }
+    if (normalized.contains('die') && normalized.contains('back')) {
+      return 'Die Back';
+    }
+    if (normalized.contains('canker')) return 'Canker';
+    if (normalized == 'healthy') return 'Healthy';
+    return formatDiseaseClassLabel(normalized);
+  }
+
+  Future<int?> _ensureDiseaseByName(
+    DatabaseExecutor executor,
+    String diseaseName, {
+    String? description,
+    String? symptoms,
+    String? prevention,
+    Map<String, int>? cache,
+  }) async {
+    final canonicalName = _canonicalDiseaseName(diseaseName);
+    if (canonicalName.isEmpty) return null;
+
+    final cacheKey = canonicalName.toLowerCase();
+    final cached = cache?[cacheKey];
+    if (cached != null) {
+      await executor.rawUpdate(
+        '''
+        UPDATE tbl_disease
+        SET
+          name = ?,
+          description = COALESCE(?, NULLIF(TRIM(description), ''), description),
+          symptoms = COALESCE(?, NULLIF(TRIM(symptoms), ''), symptoms),
+          prevention = COALESCE(?, NULLIF(TRIM(prevention), ''), prevention)
+        WHERE id = ?
+        ''',
+        [
+          canonicalName,
+          _nonEmptyOrNull(description),
+          _nonEmptyOrNull(symptoms),
+          _nonEmptyOrNull(prevention),
+          cached,
+        ],
+      );
+      return cached;
+    }
+
+    final existing = await executor.query(
+      'tbl_disease',
+      columns: ['id'],
+      where: 'LOWER(TRIM(name)) = ?',
+      whereArgs: [cacheKey],
+      limit: 1,
+    );
+
+    int? diseaseId;
+    if (existing.isNotEmpty) {
+      diseaseId = existing.first['id'] as int;
+    } else {
+      diseaseId = await executor.insert('tbl_disease', {
+        'name': canonicalName,
+        'description': _nonEmptyOrNull(description),
+        'symptoms': _nonEmptyOrNull(symptoms),
+        'prevention': _nonEmptyOrNull(prevention),
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      if (diseaseId <= 0) {
+        final rows = await executor.query(
+          'tbl_disease',
+          columns: ['id'],
+          where: 'LOWER(TRIM(name)) = ?',
+          whereArgs: [cacheKey],
+          limit: 1,
+        );
+        diseaseId = rows.isNotEmpty ? rows.first['id'] as int : null;
+      }
+    }
+
+    if (diseaseId == null) return null;
+    cache?[cacheKey] = diseaseId;
+
+    await executor.rawUpdate(
+      '''
+      UPDATE tbl_disease
+      SET
+        name = ?,
+        description = COALESCE(?, NULLIF(TRIM(description), ''), description),
+        symptoms = COALESCE(?, NULLIF(TRIM(symptoms), ''), symptoms),
+        prevention = COALESCE(?, NULLIF(TRIM(prevention), ''), prevention)
+      WHERE id = ?
+      ''',
+      [
+        canonicalName,
+        _nonEmptyOrNull(description),
+        _nonEmptyOrNull(symptoms),
+        _nonEmptyOrNull(prevention),
+        diseaseId,
+      ],
+    );
+
+    return diseaseId;
+  }
+
+  Future<void> _seedKnownDiseases(Database db) async {
+    const diseaseSeeds = <Map<String, String>>[
+      {
+        'name': 'Anthracnose',
+        'description':
+            'Anthracnose is caused by Colletotrichum gloeosporioides and is favored by prolonged leaf wetness, frequent rain, and dense canopy humidity.',
+        'symptoms':
+            'Dark to black lesions on leaves, flowers, and fruit; blossom blight and fruit spotting can expand rapidly during wet weather.',
+        'prevention':
+            'Prune to improve airflow, remove infected debris, and apply protectant fungicides such as copper or mancozeb at labeled intervals during high-risk periods.',
+      },
+      {
+        'name': 'Powdery Mildew',
+        'description':
+            'Powdery mildew (Oidium mangiferae) infects young shoots, panicles, and fruit, especially when nights are humid and mornings are dry.',
+        'symptoms':
+            'White powder-like fungal growth on flower panicles and tender leaves, followed by flower drop, poor fruit set, and surface russeting.',
+        'prevention':
+            'Apply sulfur or other labeled mildew fungicides early, manage canopy humidity, and avoid prolonged shade in dense tree sections.',
+      },
+      {
+        'name': 'Stem-End Rot',
+        'description':
+            'Stem-end rot is commonly associated with Lasiodiplodia theobromae and often appears after harvest when latent infections become active.',
+        'symptoms':
+            'Soft dark decay starting from the stem end of fruit, progressing inward during storage and transport.',
+        'prevention':
+            'Reduce harvest injury, maintain orchard sanitation, and use pre-harvest/post-harvest treatments permitted in local production guidelines.',
+      },
+      {
+        'name': 'Die Back',
+        'description':
+            'Die back is linked to fungal infection and stress-related decline, often advancing from twig tips toward larger branches.',
+        'symptoms':
+            'Progressive drying of shoot tips, bark discoloration, branch death, and occasional gum exudation.',
+        'prevention':
+            'Prune below diseased tissue, disinfect tools between cuts, and protect major cuts with labeled fungicide or wound dressing.',
+      },
+      {
+        'name': 'Canker',
+        'description':
+            'Mango canker can be associated with bacterial or fungal pathogens that enter through wounds and stressed tissues.',
+        'symptoms':
+            'Sunken or cracked bark lesions, twig cankers, branch decline, and possible gumming on affected stems.',
+        'prevention':
+            'Remove infected parts, sanitize equipment, avoid wounding during wet periods, and apply registered copper-based protection when risk is high.',
+      },
+    ];
+
+    for (final seed in diseaseSeeds) {
+      final name = seed['name']!;
+      await _ensureDiseaseByName(
+        db,
+        name,
+        description: seed['description'],
+        symptoms: seed['symptoms'],
+        prevention: seed['prevention'],
+      );
+    }
+  }
+
+  Future<void> _repairScanDiseaseForeignKeys(Database db) async {
+    final rows = await db.query(
+      'tbl_scan_record',
+      columns: ['id', 'disease_id', 'disease_class'],
+    );
+    if (rows.isEmpty) return;
+
+    final cache = <String, int>{};
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        final scanId = row['id'] as int;
+        final currentDiseaseId = row['disease_id'] as int?;
+        final diseaseClass = (row['disease_class']?.toString() ?? '').trim();
+        if (diseaseClass.isEmpty) continue;
+
+        final repairedId = await _ensureDiseaseByName(
+          txn,
+          diseaseClass,
+          cache: cache,
+        );
+        if (repairedId == null || repairedId == currentDiseaseId) continue;
+
+        await txn.update(
+          'tbl_scan_record',
+          {'disease_id': repairedId},
+          where: 'id = ?',
+          whereArgs: [scanId],
+        );
+      }
+    });
+  }
+
+  Future<void> _repairLegacyDatasetFolderImageIds(Database db) async {
+    final rows = await db.query(
+      'tbl_dataset_folders',
+      columns: ['id', 'images'],
+    );
+    if (rows.isEmpty) return;
+
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        final folderId = row['id'] as int;
+        final raw = (row['images']?.toString() ?? '').trim();
+        if (raw.isEmpty) continue;
+
+        bool changed = false;
+        final repaired = <String>[];
+        final seen = <String>{};
+
+        for (final token in raw.split(',')) {
+          final trimmed = token.trim();
+          if (trimmed.isEmpty) continue;
+          final parsed = int.tryParse(trimmed);
+          if (parsed == null) {
+            if (seen.add(trimmed)) repaired.add(trimmed);
+            continue;
+          }
+
+          final scanExists = await txn.query(
+            'tbl_scan_record',
+            columns: ['id'],
+            where: 'id = ?',
+            whereArgs: [parsed],
+            limit: 1,
+          );
+          if (scanExists.isNotEmpty) {
+            final idStr = parsed.toString();
+            if (seen.add(idStr)) repaired.add(idStr);
+            continue;
+          }
+
+          final mapped = await txn.query(
+            'tbl_photos',
+            columns: ['photo_id'],
+            where: 'id = ? AND photo_id IS NOT NULL',
+            whereArgs: [parsed],
+            limit: 1,
+          );
+          if (mapped.isEmpty) {
+            if (seen.add(trimmed)) repaired.add(trimmed);
+            continue;
+          }
+
+          final mappedScanId = mapped.first['photo_id'] as int?;
+          if (mappedScanId == null) {
+            if (seen.add(trimmed)) repaired.add(trimmed);
+            continue;
+          }
+
+          final mappedStr = mappedScanId.toString();
+          if (mappedStr != trimmed) changed = true;
+          if (seen.add(mappedStr)) repaired.add(mappedStr);
+        }
+
+        if (!changed) continue;
+
+        await txn.update(
+          'tbl_dataset_folders',
+          {'images': repaired.join(',')},
+          where: 'id = ?',
+          whereArgs: [folderId],
+        );
+      }
+    });
+  }
+
+  Future<void> _refreshDefaultActionLibraryContent(Database db) async {
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    const updates = <Map<String, String>>[
+      {
+        'disease_keyword': 'default',
+        'title': 'Apply Fungicide',
+        'description':
+            'During wet conditions, apply a labeled protectant spray such as copper hydroxide or mancozeb and follow local pre-harvest intervals.',
+      },
+      {
+        'disease_keyword': 'default',
+        'title': 'Improve Drainage',
+        'description':
+            'Keep root zones free from standing water and clear drainage canals before heavy rain periods.',
+      },
+      {
+        'disease_keyword': 'default',
+        'title': 'Remove Infected Leaves',
+        'description':
+            'Collect and destroy infected leaves, twigs, and fruit debris to reduce inoculum between flushes.',
+      },
+      {
+        'disease_keyword': 'anthracnose',
+        'title': 'Targeted Fungicide Spray',
+        'description':
+            'Start preventive copper or mancozeb sprays at flowering and repeat at label intervals when rainfall and humidity remain high.',
+      },
+      {
+        'disease_keyword': 'anthracnose',
+        'title': 'Prune Infected Growth',
+        'description':
+            'Prune visibly infected twigs 10-15 cm below lesions and destroy cuttings away from productive blocks.',
+      },
+      {
+        'disease_keyword': 'anthracnose',
+        'title': 'Improve Air Flow',
+        'description':
+            'Open dense canopy sections to shorten leaf wetness duration and reduce anthracnose infection pressure.',
+      },
+      {
+        'disease_keyword': 'anthracnose',
+        'title': 'Avoid Overhead Irrigation',
+        'description':
+            'Use ground-level watering to limit splash dispersal of spores on leaves, flowers, and young fruit.',
+      },
+      {
+        'disease_keyword': 'powdery mildew',
+        'title': 'Use Sulfur-Based Spray',
+        'description':
+            'Apply sulfur or other registered mildew fungicides at early bloom and repeat according to label guidance.',
+      },
+      {
+        'disease_keyword': 'powdery mildew',
+        'title': 'Lower Humidity Around Leaves',
+        'description':
+            'Prune to improve light penetration and airflow, especially around panicles and newly flushed shoots.',
+      },
+      {
+        'disease_keyword': 'powdery mildew',
+        'title': 'Remove Affected Leaves',
+        'description':
+            'Remove heavily infected tissues early to lower conidia load during flowering and fruit set.',
+      },
+      {
+        'disease_keyword': 'stem-end rot',
+        'title': 'Protect at Harvest',
+        'description':
+            'Protect fruit in pre-harvest windows and apply approved post-harvest sanitation practices to reduce stem-end infection.',
+      },
+      {
+        'disease_keyword': 'stem-end rot',
+        'title': 'Handle Fruits Carefully',
+        'description':
+            'Minimize stem and peel injury during harvest, grading, and transport to prevent rapid decay.',
+      },
+      {
+        'disease_keyword': 'stem-end rot',
+        'title': 'Keep Orchard Clean',
+        'description':
+            'Remove mummified and fallen fruit regularly to limit fungal carryover in the orchard.',
+      },
+      {
+        'disease_keyword': 'die back',
+        'title': 'Prune Beyond Dead Tissue',
+        'description':
+            'Cut branches below visible dieback margins and burn or bury removed material outside production areas.',
+      },
+      {
+        'disease_keyword': 'die back',
+        'title': 'Disinfect Tools',
+        'description':
+            'Disinfect pruning tools between trees using 70 percent alcohol or approved sanitizer solutions.',
+      },
+      {
+        'disease_keyword': 'die back',
+        'title': 'Protect Fresh Wounds',
+        'description':
+            'Apply approved wound protection on major cuts to reduce pathogen entry after pruning.',
+      },
+      {
+        'disease_keyword': 'canker',
+        'title': 'Remove Infected Bark',
+        'description':
+            'Prune cankered twigs and branches promptly, then sanitize tools and dispose of infected tissue safely.',
+      },
+      {
+        'disease_keyword': 'canker',
+        'title': 'Apply Copper Treatment',
+        'description':
+            'Use registered copper sprays during high-risk periods and after heavy rain if label permits.',
+      },
+      {
+        'disease_keyword': 'canker',
+        'title': 'Reduce Plant Stress',
+        'description':
+            'Maintain balanced nutrition and irrigation to reduce stress that increases canker susceptibility.',
+      },
+    ];
+
+    for (final item in updates) {
+      await db.rawUpdate(
+        '''
+        UPDATE tbl_action_library
+        SET description = ?, updated_at = ?
+        WHERE LOWER(TRIM(disease_keyword)) = LOWER(TRIM(?))
+          AND LOWER(TRIM(title)) = LOWER(TRIM(?))
+        ''',
+        [
+          item['description']!,
+          nowIso,
+          item['disease_keyword']!,
+          item['title']!,
+        ],
+      );
     }
   }
 
@@ -412,10 +936,18 @@ class LocalDb {
           CREATE TABLE IF NOT EXISTS tbl_dataset_folders(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            location TEXT NOT NULL DEFAULT '',
             images TEXT NOT NULL,
             date_created TEXT NOT NULL
           )
         ''');
+
+        final datasetFolderCols = await getTableColumns('tbl_dataset_folders');
+        if (!datasetFolderCols.contains('location')) {
+          await db.execute(
+            "ALTER TABLE tbl_dataset_folders ADD COLUMN location TEXT NOT NULL DEFAULT ''",
+          );
+        }
 
         // Check essential columns in tbl_scan_record.
         final scanColumnNames = await getTableColumns('tbl_scan_record');
@@ -459,9 +991,47 @@ class LocalDb {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_photos_name_timestamp ON tbl_photos(name, timestamp)',
         );
+        await db.execute(
+          'CREATE TABLE IF NOT EXISTS tbl_action_library('
+          'id INTEGER PRIMARY KEY AUTOINCREMENT,'
+          'disease_keyword TEXT NOT NULL,'
+          "severity_trigger TEXT NOT NULL DEFAULT 'all',"
+          "trend_trigger TEXT NOT NULL DEFAULT 'any',"
+          'title TEXT NOT NULL,'
+          'description TEXT NOT NULL,'
+          'icon_code INTEGER NOT NULL,'
+          "color_hex TEXT NOT NULL DEFAULT '#2E7D32',"
+          'priority INTEGER NOT NULL DEFAULT 100,'
+          'is_active INTEGER NOT NULL DEFAULT 1,'
+          'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,'
+          'updated_at TEXT'
+          ')',
+        );
+        await db.execute(
+          'CREATE TABLE IF NOT EXISTS tbl_weather_cache('
+          'id INTEGER PRIMARY KEY,'
+          'latitude REAL NOT NULL,'
+          'longitude REAL NOT NULL,'
+          'fetched_at TEXT NOT NULL,'
+          'temp_c REAL NOT NULL,'
+          'humidity_pct REAL NOT NULL,'
+          'rainfall_mm REAL NOT NULL,'
+          'wind_speed REAL NOT NULL,'
+          'condition TEXT NOT NULL,'
+          'raw_json TEXT NOT NULL'
+          ')',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_action_lookup ON tbl_action_library(disease_keyword, severity_trigger, trend_trigger, is_active, priority)',
+        );
+        await _seedKnownDiseases(db);
+        await _seedActionLibrary(db);
+        await _repairScanDiseaseForeignKeys(db);
+        await _repairLegacyDatasetFolderImageIds(db);
+        await _refreshDefaultActionLibraryContent(db);
         // Stamp the app schema version so _initDb() skips onCreate/onUpgrade
         // when it next opens this imported DB.
-        await db.execute('PRAGMA user_version = 5');
+        await db.execute('PRAGMA user_version = 8');
       } finally {
         await db.close();
       }
@@ -473,6 +1043,8 @@ class LocalDb {
       }
       rethrow;
     }
+
+    await generateDatasetsFromTrees();
   }
 
   Future<void> close() async {
@@ -483,40 +1055,21 @@ class LocalDb {
     }
   }
 
-  bool _isGenericDiseaseLabel(String value) {
-    final normalized = value.trim().toLowerCase();
-    if (normalized.isEmpty) return true;
-    return normalized == 'imported dataset' ||
-        normalized == 'dataset' ||
-        normalized == 'image detected' ||
-        normalized == 'imported dataset detected' ||
-        normalized == 'dataset detected';
-  }
-
   String _resolvedDiseaseName(ScanItem item) {
-    final canonical = item.diseaseName.trim();
-    if (canonical.isNotEmpty && !_isGenericDiseaseLabel(canonical)) {
-      return canonical;
-    }
-    final fallback = item.disease.trim();
-    if (fallback.isNotEmpty && !_isGenericDiseaseLabel(fallback)) {
-      return fallback;
-    }
-    return '';
+    return _canonicalDiseaseName(displayDiseaseName(item, unknownLabel: ''));
   }
 
   String _resolvedSeverityName(ScanItem item) {
-    if (item.severityLevelName.trim().isNotEmpty) {
-      return item.severityLevelName.trim();
+    final normalized = normalizeSeverityLabel(item.severityLevelName);
+    if (!isAnthracnoseScan(item)) {
+      return 'Not Applicable';
     }
 
-    final disease = _resolvedDiseaseName(item).toLowerCase();
-    if (disease == 'healthy') return 'Healthy';
-    if (item.severityValue > 40.0) return 'Advanced Stage';
-    if (item.severityValue > 5.0) return 'Early Stage';
-    // Disease can be present while Pi reports severity_percentage=0.0.
-    if (disease.isNotEmpty) return 'Early Stage';
-    return 'Healthy';
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+
+    return statusForScan(item, anthracnoseOnly: false);
   }
 
   Future<void> upsertScan(ScanItem item) async {
@@ -539,24 +1092,29 @@ class LocalDb {
       );
     }
 
-    // Upsert disease if data provided
-    int? diseaseId = item.diseaseId;
-    if (diseaseId != null && item.diseaseName.isNotEmpty) {
-      await db.insert('tbl_disease', {
-        'id': diseaseId,
-        'name': item.diseaseName,
-        'description': item.diseaseDescription,
-        'symptoms': item.diseaseSymptoms,
-        'prevention': item.diseasePrevention,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-      await db.rawUpdate(
-        'UPDATE tbl_disease SET name=?, description=?, symptoms=?, prevention=? WHERE id=?',
-        [item.diseaseName, item.diseaseDescription, item.diseaseSymptoms, item.diseasePrevention, diseaseId],
+    // Always resolve disease by canonical name to avoid mismatched foreign keys
+    // when imported datasets use a different disease-id namespace.
+    int? diseaseId;
+    final diseaseName = _resolvedDiseaseName(item);
+    if (diseaseName.isNotEmpty) {
+      diseaseId = await _ensureDiseaseByName(
+        db,
+        diseaseName,
+        description: item.diseaseDescription,
+        symptoms: item.diseaseSymptoms,
+        prevention: item.diseasePrevention,
       );
     }
 
     // Upsert severity level if data provided
     int? severityLevelId = item.severityLevelId;
+    final resolvedSeverityName = _resolvedSeverityName(item);
+    final shouldReuseProvidedSeverityId =
+        isAnthracnoseScan(item) && resolvedSeverityName != 'Not Applicable';
+    if (!shouldReuseProvidedSeverityId) {
+      severityLevelId = null;
+    }
+
     if (severityLevelId != null && item.severityLevelName.isNotEmpty) {
       await db.insert('tbl_severity_level', {
         'id': severityLevelId,
@@ -565,7 +1123,11 @@ class LocalDb {
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
       await db.rawUpdate(
         'UPDATE tbl_severity_level SET name=?, description=? WHERE id=?',
-        [item.severityLevelName, item.severityLevelDescription, severityLevelId],
+        [
+          item.severityLevelName,
+          item.severityLevelDescription,
+          severityLevelId,
+        ],
       );
     }
 
@@ -587,21 +1149,10 @@ class LocalDb {
       }
     }
 
-    final diseaseName = _resolvedDiseaseName(item);
     if (diseaseId == null && diseaseName.isNotEmpty) {
-      final diseaseRows = await db.query(
-        'tbl_disease',
-        where: 'name = ?',
-        whereArgs: [diseaseName],
-      );
-      if (diseaseRows.isEmpty) {
-        diseaseId = await db.insert('tbl_disease', {'name': diseaseName});
-      } else {
-        diseaseId = diseaseRows.first['id'] as int;
-      }
+      diseaseId = await _ensureDiseaseByName(db, diseaseName);
     }
 
-    final resolvedSeverityName = _resolvedSeverityName(item);
     if (severityLevelId == null) {
       final severityRows = await db.query(
         'tbl_severity_level',
@@ -660,7 +1211,10 @@ class LocalDb {
               NULLIF(TRIM((
                 SELECT p.path
                 FROM tbl_photos p
-                WHERE (p.photo_id = r.id OR p.id = r.id)
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
                   AND p.path IS NOT NULL
                   AND TRIM(p.path) != ''
                 ORDER BY p.id DESC
@@ -671,7 +1225,10 @@ class LocalDb {
               NULLIF(TRIM((
                 SELECT p.image_url
                 FROM tbl_photos p
-                WHERE (p.photo_id = r.id OR p.id = r.id)
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
                   AND p.image_url IS NOT NULL
                   AND TRIM(p.image_url) != ''
                 ORDER BY p.id DESC
@@ -697,7 +1254,8 @@ class LocalDb {
     required int limit,
   }) async {
     final db = await database;
-    final rows = await db.rawQuery('''
+    final rows = await db.rawQuery(
+      '''
       SELECT r.*, t.name as tree_name, t.location as tree_location, t.variety as tree_variety,
              d.name as disease_name, d.description as disease_description, d.symptoms as disease_symptoms, d.prevention as disease_prevention,
             s.name as severity_name, s.description as severity_description,
@@ -721,7 +1279,10 @@ class LocalDb {
               NULLIF(TRIM((
                 SELECT p.path
                 FROM tbl_photos p
-                WHERE (p.photo_id = r.id OR p.id = r.id)
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
                   AND p.path IS NOT NULL
                   AND TRIM(p.path) != ''
                 ORDER BY p.id DESC
@@ -732,7 +1293,10 @@ class LocalDb {
               NULLIF(TRIM((
                 SELECT p.image_url
                 FROM tbl_photos p
-                WHERE (p.photo_id = r.id OR p.id = r.id)
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
                   AND p.image_url IS NOT NULL
                   AND TRIM(p.image_url) != ''
                 ORDER BY p.id DESC
@@ -750,7 +1314,9 @@ class LocalDb {
       ) DESC,
       r.id DESC
       LIMIT ? OFFSET ?
-    ''', [limit, offset]);
+    ''',
+      [limit, offset],
+    );
     return rows.map(_scanItemFromRow).toList();
   }
 
@@ -800,7 +1366,9 @@ class LocalDb {
         columns: ['id', 'name'],
       );
       for (final row in existingDiseases) {
-        diseaseCache[row['name'] as String] = row['id'] as int;
+        final name = (row['name']?.toString() ?? '').trim().toLowerCase();
+        if (name.isEmpty) continue;
+        diseaseCache[name] = row['id'] as int;
       }
 
       final existingSeverities = await txn.query(
@@ -877,40 +1445,16 @@ class LocalDb {
 
         // Upsert disease
         final diseaseName = _resolvedDiseaseName(item);
-        int? diseaseId = item.diseaseId;
-        if (diseaseId != null && diseaseName.isNotEmpty) {
-          await txn.insert('tbl_disease', {
-            'id': diseaseId,
-            'name': diseaseName,
-            'description': item.diseaseDescription,
-            'symptoms': item.diseaseSymptoms,
-            'prevention': item.diseasePrevention,
-          }, conflictAlgorithm: ConflictAlgorithm.ignore);
-          await txn.rawUpdate(
-            'UPDATE tbl_disease SET name=?, description=?, symptoms=?, prevention=? WHERE id=?',
-            [diseaseName, item.diseaseDescription, item.diseaseSymptoms, item.diseasePrevention, diseaseId],
+        int? diseaseId;
+        if (diseaseName.isNotEmpty) {
+          diseaseId = await _ensureDiseaseByName(
+            txn,
+            diseaseName,
+            description: item.diseaseDescription,
+            symptoms: item.diseaseSymptoms,
+            prevention: item.diseasePrevention,
+            cache: diseaseCache,
           );
-          diseaseCache[diseaseName] = diseaseId;
-        } else if (diseaseId == null && diseaseName.isNotEmpty) {
-          diseaseId = diseaseCache[diseaseName];
-          if (diseaseId == null) {
-            final insertedId = await txn.insert('tbl_disease', {
-              'name': diseaseName,
-            }, conflictAlgorithm: ConflictAlgorithm.ignore);
-            if (insertedId > 0) {
-              diseaseId = insertedId;
-            } else {
-              final rows = await txn.query(
-                'tbl_disease',
-                columns: ['id'],
-                where: 'name = ?',
-                whereArgs: [diseaseName],
-                limit: 1,
-              );
-              diseaseId = rows.isNotEmpty ? rows.first['id'] as int : null;
-            }
-            if (diseaseId != null) diseaseCache[diseaseName] = diseaseId;
-          }
         }
 
         treeId ??= existing?['tree_id'] as int?;
@@ -918,19 +1462,25 @@ class LocalDb {
 
         final effectiveDiseaseClass = diseaseName.isNotEmpty
             ? diseaseName
-          : (existing?['disease_class'] as String? ?? '');
+            : (existing?['disease_class'] as String? ?? '');
         final existingTimestamp = existing?['scan_timestamp']?.toString() ?? '';
         final effectiveTimestamp = item.timestamp.isNotEmpty
-          ? item.timestamp
-          : existingTimestamp;
+            ? item.timestamp
+            : existingTimestamp;
         final existingImagePath = existing?['image_path']?.toString() ?? '';
         final effectiveImagePath = item.imagePath.isNotEmpty
-          ? item.imagePath
-          : existingImagePath;
+            ? item.imagePath
+            : existingImagePath;
 
         // Upsert severity level
         final resolvedSeverityName = _resolvedSeverityName(item);
         int? severityLevelId = item.severityLevelId;
+        final shouldReuseProvidedSeverityId =
+            isAnthracnoseScan(item) && resolvedSeverityName != 'Not Applicable';
+        if (!shouldReuseProvidedSeverityId) {
+          severityLevelId = null;
+        }
+
         if (severityLevelId == null) {
           severityLevelId = severityCache[resolvedSeverityName];
           if (severityLevelId == null) {
@@ -961,8 +1511,9 @@ class LocalDb {
     });
   }
 
-  Future<ScanSummary> getScanSummary() async {
+  Future<ScanSummary> getScanSummary({int? treeId}) async {
     final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
@@ -976,10 +1527,12 @@ class LocalDb {
         FROM tbl_scan_record r
         LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
         LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        WHERE 1=1 $treeFilter
       ),
       buckets AS (
         SELECT
           CASE
+            WHEN disease_text NOT LIKE '%anthracnose%' THEN 'not_applicable'
             WHEN severity_text LIKE '%healthy%' OR disease_text = 'healthy' THEN 'healthy'
             WHEN severity_text = 'high' THEN 'advanced'
             WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
@@ -994,6 +1547,7 @@ class LocalDb {
       )
       SELECT
         COUNT(*) as total,
+        SUM(CASE WHEN bucket != 'not_applicable' THEN 1 ELSE 0 END) as anthracnose_total,
         SUM(CASE WHEN bucket = 'advanced' THEN 1 ELSE 0 END) as advanced_stage,
         SUM(CASE WHEN bucket = 'early' THEN 1 ELSE 0 END) as early_stage,
         SUM(CASE WHEN bucket = 'healthy' THEN 1 ELSE 0 END) as healthy
@@ -1003,6 +1557,7 @@ class LocalDb {
     if (rows.isEmpty) {
       return ScanSummary(
         totalScans: 0,
+        anthracnoseTotal: 0,
         healthyCount: 0,
         earlyStageCount: 0,
         advancedStageCount: 0,
@@ -1012,25 +1567,52 @@ class LocalDb {
     final row = rows.first;
     return ScanSummary(
       totalScans: row['total'] as int? ?? 0,
+      anthracnoseTotal: row['anthracnose_total'] as int? ?? 0,
       healthyCount: row['healthy'] as int? ?? 0,
       earlyStageCount: row['early_stage'] as int? ?? 0,
       advancedStageCount: row['advanced_stage'] as int? ?? 0,
     );
   }
 
-  Future<List<double>> getWeeklyTrend() async {
-    final rows = await getWeeklyTrendSeries();
+  Future<OrchardSnapshot> getOrchardSnapshot({int? treeId}) async {
+    final results = await Future.wait([
+      getScanSummary(treeId: treeId),
+      getDiseaseDistribution(treeId: treeId),
+      getAnthracnoseStageSummary(treeId: treeId),
+      getDiseaseWeeklyTrendSeries(
+        diseaseKeyword: 'anthracnose',
+        treeId: treeId,
+      ),
+      getPrimaryDiseaseName(treeId: treeId),
+      getLatestScanDate(treeId: treeId),
+      getScanRowCompleteness(),
+    ]);
+
+    return OrchardSnapshot(
+      summary: results[0] as ScanSummary,
+      diseaseDistributionRows: results[1] as List<Map<String, dynamic>>,
+      anthracnoseStageSummary: results[2] as Map<String, int>,
+      anthracnoseTrendSeries: results[3] as List<Map<String, dynamic>>,
+      primaryDisease: results[4] as String,
+      latestScanDate: results[5] as String?,
+      rowCompleteness: results[6] as Map<String, int>,
+    );
+  }
+
+  Future<List<double>> getWeeklyTrend({int? treeId}) async {
+    final rows = await getWeeklyTrendSeries(treeId: treeId);
     return rows.map((row) => (row['count'] as int).toDouble()).toList();
   }
 
-  Future<List<Map<String, dynamic>>> getWeeklyTrendSeries() async {
+  Future<List<Map<String, dynamic>>> getWeeklyTrendSeries({int? treeId}) async {
     final db = await database;
+    final String treeFilter = treeId != null ? 'AND tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
           datetime(replace(replace(substr(scan_timestamp, 1, 19), 'T', ' '), 'Z', '')) AS normalized_ts
         FROM tbl_scan_record
-        WHERE scan_timestamp IS NOT NULL AND TRIM(scan_timestamp) != ''
+        WHERE scan_timestamp IS NOT NULL AND TRIM(scan_timestamp) != '' $treeFilter
       )
       SELECT
         strftime('%Y-%W', normalized_ts) as week,
@@ -1064,7 +1646,14 @@ class LocalDb {
     if (year == null || week == null) return yearWeek;
 
     final jan1 = DateTime(year, 1, 1);
-    final weekStart = jan1.add(Duration(days: week * 7));
+    final firstMondayOffset = (DateTime.monday - jan1.weekday + 7) % 7;
+    final DateTime weekStart;
+    if (week <= 0) {
+      weekStart = jan1;
+    } else {
+      final firstMonday = jan1.add(Duration(days: firstMondayOffset));
+      weekStart = firstMonday.add(Duration(days: (week - 1) * 7));
+    }
     const monthNames = [
       'Jan',
       'Feb',
@@ -1082,13 +1671,14 @@ class LocalDb {
     return '${monthNames[weekStart.month - 1]} ${weekStart.day}';
   }
 
-  Future<String?> getLatestScanDate() async {
+  Future<String?> getLatestScanDate({int? treeId}) async {
     final db = await database;
+    final String treeFilter = treeId != null ? 'AND tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT datetime(replace(replace(substr(scan_timestamp, 1, 19), 'T', ' '), 'Z', '')) AS normalized_ts
         FROM tbl_scan_record
-        WHERE scan_timestamp IS NOT NULL AND TRIM(scan_timestamp) != ''
+        WHERE scan_timestamp IS NOT NULL AND TRIM(scan_timestamp) != '' $treeFilter
       )
       SELECT MAX(normalized_ts) AS latest
       FROM normalized
@@ -1128,8 +1718,22 @@ class LocalDb {
     };
   }
 
-  Future<List<Map<String, dynamic>>> getDiseaseDistribution() async {
+  Future<List<Map<String, dynamic>>> getDistinctTreesWithScans() async {
     final db = await database;
+    return await db.rawQuery('''
+      SELECT DISTINCT t.id, t.name
+      FROM tbl_tree t
+      INNER JOIN tbl_scan_record r ON r.tree_id = t.id
+      WHERE t.name IS NOT NULL AND TRIM(t.name) != ''
+      ORDER BY t.name COLLATE NOCASE ASC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getDiseaseDistribution({
+    int? treeId,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
@@ -1137,22 +1741,52 @@ class LocalDb {
             WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
             WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
             ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
-          END AS disease
+          END AS disease_name,
+          LOWER(TRIM(COALESCE(NULLIF(s.name, ''), NULLIF(r.severity_level, ''), ''))) AS severity_text,
+          CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END AS disease,
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease_text,
+          COALESCE(r.severity_percentage, 0) AS severity_pct
         FROM tbl_scan_record r
         LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+        WHERE 1=1 $treeFilter
+      ),
+      bucketed AS (
+        SELECT
+          CASE
+            WHEN severity_text LIKE '%healthy%' OR disease_text = 'healthy' THEN 'Healthy'
+            WHEN severity_text = 'high' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_text IN ('low', 'trace') THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_pct > 40.0 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_pct > 5.0 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN disease_text != '' AND disease_text != 'healthy' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            ELSE 'Healthy'
+          END AS disease
+        FROM normalized
       )
       SELECT
-        COALESCE(NULLIF(disease, ''), 'Unknown') AS disease,
+        disease,
         COUNT(*) AS count
-      FROM normalized
-      GROUP BY COALESCE(NULLIF(disease, ''), 'Unknown')
+      FROM bucketed
+      GROUP BY disease
       ORDER BY count DESC
     ''');
     return rows;
   }
 
-  Future<String> getPrimaryDiseaseName() async {
+  Future<String> getPrimaryDiseaseName({int? treeId}) async {
     final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
@@ -1163,6 +1797,7 @@ class LocalDb {
           END AS disease
         FROM tbl_scan_record r
         LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        WHERE 1=1 $treeFilter
       )
       SELECT disease, COUNT(*) AS count
       FROM normalized
@@ -1175,8 +1810,9 @@ class LocalDb {
     return rows.first['disease']?.toString() ?? 'No Active Disease';
   }
 
-  Future<int> getAnthracnoseCount() async {
+  Future<int> getAnthracnoseCount({int? treeId}) async {
     final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
     final rows = await db.rawQuery('''
       WITH normalized AS (
         SELECT
@@ -1187,6 +1823,7 @@ class LocalDb {
           END)) AS disease
         FROM tbl_scan_record r
         LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        WHERE 1=1 $treeFilter
       )
       SELECT COUNT(*) AS count
       FROM normalized
@@ -1197,6 +1834,718 @@ class LocalDb {
     final value = rows.first['count'];
     if (value is int) return value;
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Future<Map<String, int>> getAnthracnoseStageSummary({int? treeId}) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
+    final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease_text,
+          LOWER(TRIM(COALESCE(NULLIF(s.name, ''), NULLIF(r.severity_level, ''), ''))) AS severity_text,
+          COALESCE(r.severity_percentage, 0) AS severity_pct
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+        WHERE 1=1 $treeFilter
+      ),
+      anthracnose_only AS (
+        SELECT *
+        FROM normalized
+        WHERE disease_text LIKE '%anthracnose%'
+      ),
+      bucketed AS (
+        SELECT
+          CASE
+            WHEN severity_text LIKE '%healthy%' THEN 'healthy'
+            WHEN severity_text = 'high' THEN 'advanced'
+            WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
+            WHEN severity_text IN ('low', 'trace') THEN 'early'
+            WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
+            WHEN severity_pct > 40.0 THEN 'advanced'
+            WHEN severity_pct > 5.0 THEN 'early'
+            ELSE 'healthy'
+          END AS severity_bucket
+        FROM anthracnose_only
+      )
+      SELECT
+        SUM(CASE WHEN severity_bucket = 'healthy' THEN 1 ELSE 0 END) AS healthy_count,
+        SUM(CASE WHEN severity_bucket = 'early' THEN 1 ELSE 0 END) AS early_count,
+        SUM(CASE WHEN severity_bucket = 'advanced' THEN 1 ELSE 0 END) AS advanced_count,
+        COUNT(*) AS total_count
+      FROM bucketed
+    ''');
+
+    int toIntValue(Object? value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    if (rows.isEmpty) {
+      return {'healthy': 0, 'early': 0, 'advanced': 0, 'total': 0};
+    }
+
+    final row = rows.first;
+    return {
+      'healthy': toIntValue(row['healthy_count']),
+      'early': toIntValue(row['early_count']),
+      'advanced': toIntValue(row['advanced_count']),
+      'total': toIntValue(row['total_count']),
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> getDiseaseWeeklyTrendSeries({
+    required String diseaseKeyword,
+    int? treeId,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
+    final String normalizedKeyword = diseaseKeyword.trim().toLowerCase();
+
+    final rows = await db.rawQuery(
+      '''
+      WITH normalized AS (
+        SELECT
+          datetime(replace(replace(substr(r.scan_timestamp, 1, 19), 'T', ' '), 'Z', '')) AS normalized_ts,
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN d.name
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        WHERE r.scan_timestamp IS NOT NULL
+          AND TRIM(r.scan_timestamp) != ''
+          $treeFilter
+      )
+      SELECT
+        strftime('%Y-%W', normalized_ts) as week,
+        COUNT(*) as count
+      FROM normalized
+      WHERE normalized_ts IS NOT NULL
+        AND disease LIKE ?
+      GROUP BY week
+      ORDER BY week DESC
+      LIMIT 11
+    ''',
+      ['%$normalizedKeyword%'],
+    );
+
+    final List<Map<String, dynamic>> series = [];
+    for (final row in rows.reversed) {
+      final weekRaw = row['week']?.toString() ?? '';
+      final count = row['count'] as int? ?? 0;
+      series.add({
+        'week': weekRaw,
+        'count': count,
+        'label': _weekLabelFromYearWeek(weekRaw),
+      });
+    }
+    return series;
+  }
+
+  Future<List<Map<String, dynamic>>> getSeverityTrendMonthOptions({
+    int? treeId,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+    final args = <Object?>[];
+    if (treeId != null) args.add(treeId);
+
+    final rows = await db.rawQuery('''
+      SELECT r.scan_timestamp, r.analysis_updated_at
+      FROM tbl_scan_record r
+      WHERE (
+          (r.scan_timestamp IS NOT NULL AND TRIM(r.scan_timestamp) != '')
+          OR (r.analysis_updated_at IS NOT NULL AND TRIM(r.analysis_updated_at) != '')
+        )
+        $treeFilter
+    ''', args);
+
+    final Set<int> uniqueMonthKeys = <int>{};
+    for (final row in rows) {
+      final raw = row['scan_timestamp']?.toString() ?? '';
+      final fallbackRaw = row['analysis_updated_at']?.toString() ?? '';
+      final parsed = _parseTrendTimestamp(raw, fallbackRaw: fallbackRaw);
+      if (parsed == null) continue;
+      uniqueMonthKeys.add(parsed.year * 100 + parsed.month);
+    }
+
+    final sorted = uniqueMonthKeys.toList()..sort((a, b) => b.compareTo(a));
+    return sorted
+        .map((key) {
+          final year = key ~/ 100;
+          final month = key % 100;
+          return {
+            'year': year,
+            'month': month,
+            'label': _monthLabel(month, year),
+          };
+        })
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getSeverityProgressionSeries({
+    int? treeId,
+    int? month,
+    int? year,
+    int weekWindow = 8,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+    final args = <Object?>[];
+    if (treeId != null) args.add(treeId);
+
+    final rows = await db.rawQuery('''
+      SELECT
+        r.scan_timestamp,
+        r.analysis_updated_at,
+        COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') AS severity_text,
+        LOWER(TRIM(CASE
+          WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+          WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+          ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+        END)) AS disease_text,
+        COALESCE(r.severity_percentage, 0) AS severity_pct
+      FROM tbl_scan_record r
+      LEFT JOIN tbl_disease d ON r.disease_id = d.id
+      LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+      WHERE (
+          (r.scan_timestamp IS NOT NULL AND TRIM(r.scan_timestamp) != '')
+          OR (r.analysis_updated_at IS NOT NULL AND TRIM(r.analysis_updated_at) != '')
+        )
+        $treeFilter
+    ''', args);
+
+    final Map<DateTime, _SeverityBucketCounter> weeklyBuckets =
+        <DateTime, _SeverityBucketCounter>{};
+
+    for (final row in rows) {
+      final parsed = _parseTrendTimestamp(
+        row['scan_timestamp']?.toString() ?? '',
+        fallbackRaw: row['analysis_updated_at']?.toString() ?? '',
+      );
+      if (parsed == null) continue;
+
+      if (month != null && year != null) {
+        if (parsed.month != month || parsed.year != year) {
+          continue;
+        }
+      }
+
+      final bucket = _resolveSeverityBucket(
+        severityText: row['severity_text']?.toString() ?? '',
+        diseaseText: row['disease_text']?.toString() ?? '',
+        severityPercent: (row['severity_pct'] as num?)?.toDouble() ?? 0,
+      );
+
+      if (bucket == 'not_applicable') {
+        continue;
+      }
+
+      final weekStart = _startOfWeek(parsed);
+      final counter = weeklyBuckets.putIfAbsent(
+        weekStart,
+        () => _SeverityBucketCounter(),
+      );
+
+      switch (bucket) {
+        case 'healthy':
+          counter.healthy += 1;
+          break;
+        case 'early':
+          counter.early += 1;
+          break;
+        case 'advanced':
+          counter.advanced += 1;
+          break;
+      }
+    }
+
+    if (weeklyBuckets.isEmpty) return <Map<String, dynamic>>[];
+
+    final List<DateTime> weeks = weeklyBuckets.keys.toList()..sort();
+    late final List<DateTime> selectedWeeks;
+
+    if (month != null && year != null) {
+      final start = weeks.length > weekWindow ? weeks.length - weekWindow : 0;
+      selectedWeeks = weeks.sublist(start);
+    } else {
+      final latest = weeks.last;
+      selectedWeeks = List<DateTime>.generate(
+        weekWindow,
+        (index) =>
+            latest.subtract(Duration(days: (weekWindow - 1 - index) * 7)),
+      );
+    }
+
+    final List<Map<String, dynamic>> result = <Map<String, dynamic>>[];
+    for (final week in selectedWeeks) {
+      final counter = weeklyBuckets[week] ?? _SeverityBucketCounter();
+      final total = counter.total;
+
+      final healthyPct = total <= 0 ? 0.0 : (counter.healthy / total) * 100;
+      final earlyPct = total <= 0 ? 0.0 : (counter.early / total) * 100;
+      final advancedPct = total <= 0 ? 0.0 : (counter.advanced / total) * 100;
+
+      result.add({
+        'week_start': week.toIso8601String(),
+        'label': _weekLabelFromDate(week),
+        'healthy': healthyPct,
+        'early': earlyPct,
+        'advanced': advancedPct,
+        'total': total,
+      });
+    }
+
+    return result;
+  }
+
+  DateTime _startOfWeek(DateTime dt) {
+    final normalized = DateTime.utc(dt.year, dt.month, dt.day);
+    return normalized.subtract(
+      Duration(days: normalized.weekday - DateTime.monday),
+    );
+  }
+
+  DateTime? _parseTrendTimestamp(String raw, {String? fallbackRaw}) {
+    final trimmed = raw.trim().isNotEmpty
+        ? raw.trim()
+        : (fallbackRaw ?? '').trim();
+    if (trimmed.isEmpty) return null;
+
+    final parsed =
+        DateTime.tryParse(trimmed) ??
+        DateTime.tryParse(trimmed.replaceFirst(' ', 'T'));
+    if (parsed != null) return parsed;
+
+    final m = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?',
+    ).firstMatch(trimmed);
+    if (m == null) return null;
+
+    final y = int.tryParse(m.group(1) ?? '');
+    final mo = int.tryParse(m.group(2) ?? '');
+    final d = int.tryParse(m.group(3) ?? '');
+    final h = int.tryParse(m.group(4) ?? '0');
+    final mi = int.tryParse(m.group(5) ?? '0');
+    final s = int.tryParse(m.group(6) ?? '0');
+
+    if (y == null || mo == null || d == null) return null;
+    return DateTime(y, mo, d, h ?? 0, mi ?? 0, s ?? 0);
+  }
+
+  String _resolveSeverityBucket({
+    required String severityText,
+    required String diseaseText,
+    required double severityPercent,
+  }) {
+    final severity = severityText.trim().toLowerCase();
+    final disease = diseaseText.trim().toLowerCase();
+
+    if (!disease.contains('anthracnose')) return 'not_applicable';
+
+    if (severity.contains('healthy') || disease == 'healthy') return 'healthy';
+    if (severity == 'high') return 'advanced';
+    if (severity.contains('advanced') ||
+        severity.contains('severe') ||
+        severity.contains('critical')) {
+      return 'advanced';
+    }
+    if (severity == 'low' || severity == 'trace') return 'early';
+    if (severity.contains('early') ||
+        severity.contains('moderate') ||
+        severity.contains('mid')) {
+      return 'early';
+    }
+    if (severityPercent > 40.0) return 'advanced';
+    if (severityPercent > 5.0) return 'early';
+    if (disease.isNotEmpty && disease != 'healthy') return 'early';
+    return 'healthy';
+  }
+
+  String _weekLabelFromDate(DateTime weekStart) {
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${monthNames[weekStart.month - 1]} ${weekStart.day}';
+  }
+
+  String _monthLabel(int month, int year) {
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    if (month < 1 || month > 12) return '$month/$year';
+    return '${monthNames[month - 1]} $year';
+  }
+
+  Future<List<ActionItem>> getAllActions() async {
+    final db = await database;
+    final rows = await db.query(
+      'tbl_action_library',
+      where: 'is_active = 1',
+      orderBy: 'disease_keyword COLLATE NOCASE ASC, priority ASC, id ASC',
+    );
+    return rows.map(ActionItem.fromMap).toList(growable: false);
+  }
+
+  Future<List<ActionItem>> getActionsForContext({
+    required String disease,
+    required String severityTrigger,
+    required String trendTrigger,
+  }) async {
+    final db = await database;
+    final normalizedDisease = disease.trim().toLowerCase();
+    final normalizedSeverity = severityTrigger.trim().toLowerCase();
+    final normalizedTrend = trendTrigger.trim().toLowerCase();
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT *
+      FROM tbl_action_library
+      WHERE is_active = 1
+        AND (disease_keyword = ? OR disease_keyword = 'default')
+        AND (severity_trigger = ? OR severity_trigger = 'all')
+        AND (trend_trigger = ? OR trend_trigger = 'any')
+      ORDER BY
+        CASE WHEN disease_keyword = ? THEN 0 ELSE 1 END,
+        CASE WHEN severity_trigger = ? THEN 0 ELSE 1 END,
+        CASE WHEN trend_trigger = ? THEN 0 ELSE 1 END,
+        priority ASC,
+        id ASC
+      ''',
+      [
+        normalizedDisease,
+        normalizedSeverity,
+        normalizedTrend,
+        normalizedDisease,
+        normalizedSeverity,
+        normalizedTrend,
+      ],
+    );
+
+    return rows.map(ActionItem.fromMap).toList(growable: false);
+  }
+
+  Future<int> upsertAction(ActionItem item) async {
+    final db = await database;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final map = item.toMap()..['updated_at'] = nowIso;
+
+    if (item.id == null) {
+      map['created_at'] = nowIso;
+      return db.insert('tbl_action_library', map);
+    }
+
+    await db.update(
+      'tbl_action_library',
+      map,
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+    return item.id!;
+  }
+
+  Future<void> deleteAction(int id) async {
+    final db = await database;
+    await db.delete('tbl_action_library', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<WeatherData?> getCachedWeather() async {
+    final db = await database;
+    final rows = await db.query('tbl_weather_cache', where: 'id = 1', limit: 1);
+    if (rows.isEmpty) {
+      return null;
+    }
+    return WeatherData.fromMap(rows.first);
+  }
+
+  Future<void> saveWeatherCache(WeatherData weather) async {
+    final db = await database;
+    await db.insert(
+      'tbl_weather_cache',
+      weather.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> _seedActionLibrary(Database db) async {
+    final existing = await db.rawQuery(
+      'SELECT COUNT(*) AS count FROM tbl_action_library',
+    );
+    final existingCount = (existing.first['count'] as int?) ?? 0;
+    if (existingCount > 0) {
+      return;
+    }
+
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final seeds = <ActionItem>[
+      const ActionItem(
+        diseaseKeyword: 'default',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Apply Fungicide',
+        description:
+            'During wet conditions, apply a labeled protectant spray such as copper hydroxide or mancozeb and follow local pre-harvest intervals.',
+        iconCode: 0xe3bb,
+        colorHex: '#06850C',
+        priority: 10,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'default',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Improve Drainage',
+        description:
+            'Keep root zones free from standing water and clear drainage canals before heavy rain periods.',
+        iconCode: 0xebde,
+        colorHex: '#85D133',
+        priority: 20,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'default',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Remove Infected Leaves',
+        description:
+            'Collect and destroy infected leaves, twigs, and fruit debris to reduce inoculum between flushes.',
+        iconCode: 0xe16c,
+        colorHex: '#A5E358',
+        priority: 30,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'anthracnose',
+        severityTrigger: 'early',
+        trendTrigger: 'worsening',
+        title: 'Targeted Fungicide Spray',
+        description:
+          'Start preventive copper or mancozeb sprays at flowering and repeat at label intervals when rainfall and humidity remain high.',
+        iconCode: 0xe3bb,
+        colorHex: '#06850C',
+        priority: 1,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'anthracnose',
+        severityTrigger: 'advanced',
+        trendTrigger: 'any',
+        title: 'Prune Infected Growth',
+        description:
+          'Prune visibly infected twigs 10-15 cm below lesions and destroy cuttings away from productive blocks.',
+        iconCode: 0xe3c9,
+        colorHex: '#2E7D32',
+        priority: 2,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'anthracnose',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Improve Air Flow',
+        description:
+          'Open dense canopy sections to shorten leaf wetness duration and reduce anthracnose infection pressure.',
+        iconCode: 0xe3a7,
+        colorHex: '#85D133',
+        priority: 3,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'anthracnose',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Avoid Overhead Irrigation',
+        description:
+          'Use ground-level watering to limit splash dispersal of spores on leaves, flowers, and young fruit.',
+        iconCode: 0xebde,
+        colorHex: '#A5E358',
+        priority: 4,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'powdery mildew',
+        severityTrigger: 'early',
+        trendTrigger: 'worsening',
+        title: 'Use Sulfur-Based Spray',
+        description:
+          'Apply sulfur or other registered mildew fungicides at early bloom and repeat according to label guidance.',
+        iconCode: 0xe3bb,
+        colorHex: '#06850C',
+        priority: 1,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'powdery mildew',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Lower Humidity Around Leaves',
+        description:
+          'Prune to improve light penetration and airflow, especially around panicles and newly flushed shoots.',
+        iconCode: 0xe3a7,
+        colorHex: '#85D133',
+        priority: 2,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'powdery mildew',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Remove Affected Leaves',
+        description:
+            'Remove heavily infected tissues early to lower conidia load during flowering and fruit set.',
+        iconCode: 0xe16c,
+        colorHex: '#A5E358',
+        priority: 3,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'stem-end rot',
+        severityTrigger: 'all',
+        trendTrigger: 'worsening',
+        title: 'Protect at Harvest',
+        description:
+          'Protect fruit in pre-harvest windows and apply approved post-harvest sanitation practices to reduce stem-end infection.',
+        iconCode: 0xe3bb,
+        colorHex: '#06850C',
+        priority: 1,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'stem-end rot',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Handle Fruits Carefully',
+        description:
+          'Minimize stem and peel injury during harvest, grading, and transport to prevent rapid decay.',
+        iconCode: 0xe553,
+        colorHex: '#85D133',
+        priority: 2,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'stem-end rot',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Keep Orchard Clean',
+        description:
+            'Remove mummified and fallen fruit regularly to limit fungal carryover in the orchard.',
+        iconCode: 0xe56d,
+        colorHex: '#A5E358',
+        priority: 3,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'die back',
+        severityTrigger: 'advanced',
+        trendTrigger: 'any',
+        title: 'Prune Beyond Dead Tissue',
+        description:
+            'Cut branches below visible dieback margins and burn or bury removed material outside production areas.',
+        iconCode: 0xe3c9,
+        colorHex: '#06850C',
+        priority: 1,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'die back',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Disinfect Tools',
+        description:
+          'Disinfect pruning tools between trees using 70 percent alcohol or approved sanitizer solutions.',
+        iconCode: 0xf0554,
+        colorHex: '#85D133',
+        priority: 2,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'die back',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Protect Fresh Wounds',
+        description:
+            'Apply approved wound protection on major cuts to reduce pathogen entry after pruning.',
+        iconCode: 0xe9e0,
+        colorHex: '#A5E358',
+        priority: 3,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'canker',
+        severityTrigger: 'advanced',
+        trendTrigger: 'any',
+        title: 'Remove Infected Bark',
+        description:
+            'Prune cankered twigs and branches promptly, then sanitize tools and dispose of infected tissue safely.',
+        iconCode: 0xe16c,
+        colorHex: '#06850C',
+        priority: 1,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'canker',
+        severityTrigger: 'early',
+        trendTrigger: 'worsening',
+        title: 'Apply Copper Treatment',
+        description:
+            'Use registered copper sprays during high-risk periods and after heavy rain if label permits.',
+        iconCode: 0xe3bb,
+        colorHex: '#85D133',
+        priority: 2,
+        isActive: true,
+      ),
+      const ActionItem(
+        diseaseKeyword: 'canker',
+        severityTrigger: 'all',
+        trendTrigger: 'any',
+        title: 'Reduce Plant Stress',
+        description:
+          'Maintain balanced nutrition and irrigation to reduce stress that increases canker susceptibility.',
+        iconCode: 0xe3f9,
+        colorHex: '#A5E358',
+        priority: 3,
+        isActive: true,
+      ),
+    ];
+
+    final batch = db.batch();
+    for (final seed in seeds) {
+      final row = seed.toMap();
+      row['created_at'] = nowIso;
+      row['updated_at'] = nowIso;
+      batch.insert('tbl_action_library', row);
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<ScanItem?> getScanById(int id) async {
@@ -1226,7 +2575,10 @@ class LocalDb {
           NULLIF(TRIM((
             SELECT p.path
             FROM tbl_photos p
-            WHERE (p.photo_id = r.id OR p.id = r.id)
+            WHERE (
+              p.photo_id = r.id OR
+              (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+            )
               AND p.path IS NOT NULL
               AND TRIM(p.path) != ''
             ORDER BY p.id DESC
@@ -1237,7 +2589,10 @@ class LocalDb {
           NULLIF(TRIM((
             SELECT p.image_url
             FROM tbl_photos p
-            WHERE (p.photo_id = r.id OR p.id = r.id)
+            WHERE (
+              p.photo_id = r.id OR
+              (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+            )
               AND p.image_url IS NOT NULL
               AND TRIM(p.image_url) != ''
             ORDER BY p.id DESC
@@ -1328,7 +2683,10 @@ class LocalDb {
             NULLIF(TRIM((
               SELECT p.path
               FROM tbl_photos p
-              WHERE (p.photo_id = r.id OR p.id = r.id)
+              WHERE (
+                p.photo_id = r.id OR
+                (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+              )
                 AND p.path IS NOT NULL
                 AND TRIM(p.path) != ''
               ORDER BY p.id DESC
@@ -1340,7 +2698,10 @@ class LocalDb {
             NULLIF(TRIM((
               SELECT p.image_url
               FROM tbl_photos p
-              WHERE (p.photo_id = r.id OR p.id = r.id)
+              WHERE (
+                p.photo_id = r.id OR
+                (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+              )
                 AND p.image_url IS NOT NULL
                 AND TRIM(p.image_url) != ''
               ORDER BY p.id DESC
@@ -1391,7 +2752,10 @@ class LocalDb {
         NULLIF(TRIM((
           SELECT p.image_url
           FROM tbl_photos p
-          WHERE (p.photo_id = tbl_scan_record.id OR p.id = tbl_scan_record.id)
+          WHERE (
+            p.photo_id = tbl_scan_record.id OR
+            (p.id = tbl_scan_record.id AND (p.photo_id IS NULL OR p.photo_id = tbl_scan_record.id))
+          )
             AND p.image_url IS NOT NULL
             AND TRIM(p.image_url) != ''
           ORDER BY p.id DESC
@@ -1412,7 +2776,10 @@ class LocalDb {
         NULLIF(TRIM((
           SELECT p.image_url
           FROM tbl_photos p
-          WHERE (p.photo_id = tbl_scan_record.id OR p.id = tbl_scan_record.id)
+          WHERE (
+            p.photo_id = tbl_scan_record.id OR
+            (p.id = tbl_scan_record.id AND (p.photo_id IS NULL OR p.photo_id = tbl_scan_record.id))
+          )
             AND p.image_url IS NOT NULL
             AND TRIM(p.image_url) != ''
           ORDER BY p.id DESC
@@ -1561,7 +2928,9 @@ class LocalDb {
     return results;
   }
 
-  Future<List<Map<String, dynamic>>> getPhotosByScanIds(List<int> scanIds) async {
+  Future<List<Map<String, dynamic>>> getPhotosByScanIds(
+    List<int> scanIds,
+  ) async {
     if (scanIds.isEmpty) return [];
     final db = await database;
     final placeholders = List.filled(scanIds.length, '?').join(',');
@@ -1660,7 +3029,10 @@ class LocalDb {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final merged = <String>{...existing, ...imageIds.map((e) => e.trim()).where((e) => e.isNotEmpty)};
+    final merged = <String>{
+      ...existing,
+      ...imageIds.map((e) => e.trim()).where((e) => e.isNotEmpty),
+    };
 
     await updateMyTree(treeId, images: merged.join(','));
   }
@@ -1694,10 +3066,12 @@ class LocalDb {
     required String name,
     required List<String> imageIds,
     required String dateCreated,
+    String location = '',
   }) async {
     final db = await database;
     return await db.insert('tbl_dataset_folders', {
       'name': name,
+      'location': location,
       'images': imageIds.join(','),
       'date_created': dateCreated,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -1760,7 +3134,10 @@ class LocalDb {
     );
   }
 
-  Future<void> addImagesToDatasetFolder(String folderName, List<String> imageIds) async {
+  Future<void> addImagesToDatasetFolder(
+    String folderName,
+    List<String> imageIds,
+  ) async {
     if (imageIds.isEmpty) return;
 
     final db = await database;
@@ -1796,4 +3173,93 @@ class LocalDb {
       whereArgs: [folderName],
     );
   }
+
+  Future<void> generateDatasetsFromTrees() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        TRIM(t.name) AS tree_name,
+        TRIM(COALESCE(t.location, '')) AS tree_location,
+        CAST(r.id AS TEXT) AS scan_id
+      FROM tbl_scan_record r
+      INNER JOIN tbl_tree t ON r.tree_id = t.id
+      WHERE t.name IS NOT NULL AND TRIM(t.name) != ''
+      ORDER BY tree_name COLLATE NOCASE ASC, r.id ASC
+    ''');
+
+    final grouped = <String, List<String>>{};
+    final groupedLocations = <String, String>{};
+    for (final row in rows) {
+      final treeName = (row['tree_name']?.toString() ?? '').trim();
+      final treeLocation = (row['tree_location']?.toString() ?? '').trim();
+      final scanId = (row['scan_id']?.toString() ?? '').trim();
+      if (treeName.isEmpty || scanId.isEmpty) continue;
+      grouped.putIfAbsent(treeName, () => <String>[]).add(scanId);
+      if (treeLocation.isNotEmpty) {
+        groupedLocations.putIfAbsent(treeName, () => treeLocation);
+      }
+    }
+
+    if (grouped.isEmpty) return;
+
+    final nowIso = DateTime.now().toIso8601String();
+    await db.transaction((txn) async {
+      for (final entry in grouped.entries) {
+        final treeName = entry.key;
+        final incoming = entry.value
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        if (incoming.isEmpty) continue;
+
+        final existingRows = await txn.query(
+          'tbl_dataset_folders',
+          columns: ['images', 'location'],
+          where: 'name = ?',
+          whereArgs: [treeName],
+          limit: 1,
+        );
+
+        if (existingRows.isEmpty) {
+          final uniqueIncoming = <String>{...incoming}.toList();
+          await txn.insert('tbl_dataset_folders', {
+            'name': treeName,
+            'location': groupedLocations[treeName] ?? '',
+            'images': uniqueIncoming.join(','),
+            'date_created': nowIso,
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+          continue;
+        }
+
+        final existingRaw = existingRows.first['images']?.toString() ?? '';
+        final existingLocation =
+            existingRows.first['location']?.toString().trim() ?? '';
+        final existingIds = existingRaw
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final merged = <String>{...existingIds, ...incoming};
+        final incomingLocation = groupedLocations[treeName] ?? '';
+        final locationToSave = existingLocation.isNotEmpty
+            ? existingLocation
+            : incomingLocation;
+
+        await txn.update(
+          'tbl_dataset_folders',
+          {'images': merged.join(','), 'location': locationToSave},
+          where: 'name = ?',
+          whereArgs: [treeName],
+        );
+      }
+    });
+  }
+}
+
+class _SeverityBucketCounter {
+  int healthy = 0;
+  int early = 0;
+  int advanced = 0;
+
+  int get total => healthy + early + advanced;
 }

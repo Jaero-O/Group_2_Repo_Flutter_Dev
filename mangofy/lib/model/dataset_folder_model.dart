@@ -3,12 +3,14 @@
 class DatasetFolder {
   final int? id;
   final String name;
+  final String location;
   final List<String> images; // List of image IDs/paths
   final String dateCreated;
 
   DatasetFolder({
     this.id,
     required this.name,
+    this.location = '',
     required this.images,
     required this.dateCreated,
   });
@@ -19,6 +21,7 @@ class DatasetFolder {
     return {
       'id': id,
       'name': name,
+      'location': location,
       // Store the list as a comma-separated String in SQLite
       'images': images.join(','), 
       'date_created': dateCreated,
@@ -31,6 +34,7 @@ class DatasetFolder {
     return DatasetFolder(
       id: map['id'] as int?,
       name: map['name'] as String,
+      location: (map['location'] as String?) ?? '',
       // Parse the comma-separated String back into a List<String>
       images: rawImages.trim().isEmpty
           ? <String>[]

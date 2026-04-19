@@ -174,6 +174,7 @@ class _DatasetPageState extends State<DatasetPage> {
                             crossAxisCount: 2,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 12,
+                            childAspectRatio: 0.80,
                           ),
                           itemCount: folders.length,
                           itemBuilder: (context, index) {
@@ -238,12 +239,17 @@ class _DatasetPageState extends State<DatasetPage> {
         backgroundColor: Colors.green,
         onPressed: () => DatasetDialogs.showCreateFolderDialog(
           context,
-          (String finalFolderName, List<String> selectedImages) async {
+          (
+            String finalFolderName,
+            String location,
+            List<String> selectedImages,
+          ) async {
             if (!mounted) return;
 
             // Save the new folder to the database
             await LocalDb.instance.insertDatasetFolder(
               name: finalFolderName,
+              location: location,
               imageIds: selectedImages,
               dateCreated: DateTime.now().toIso8601String(), // Store creation date
             );

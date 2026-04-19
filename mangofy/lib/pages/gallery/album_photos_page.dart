@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'photo_widgets.dart'; 
 import 'gallery_dialogs.dart'; 
 import '../../model/photo.dart';
+import '../../model/scan_classification.dart';
 import '../../services/local_db.dart';
 
 class AlbumPhotosPage extends StatefulWidget {
@@ -29,37 +30,78 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
   }
 
   Future<List<Photo>> _loadAlbumPhotos() async {
-    final ids = widget.images.map(int.tryParse).whereType<int>().toList();
-    if (ids.isEmpty) return <Photo>[];
-
-    final directMaps = await LocalDb.instance.getPhotosByIds(ids);
-    final directPhotos = directMaps
-        .map(Photo.fromMap)
-        .where((p) => p.id != null)
+    final trimmed = widget.images
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty)
         .toList();
+    if (trimmed.isEmpty) return <Photo>[];
 
-    final byPhotoId = {for (final p in directPhotos) p.id!: p};
+    final ids = trimmed.map(int.tryParse).whereType<int>().toList();
+    final photosByScanId = <int, Photo>{};
 
-    final unmatchedScanIds = ids.where((id) => !byPhotoId.containsKey(id)).toList();
-    final scanMaps = await LocalDb.instance.getPhotosByScanIds(unmatchedScanIds);
-    final scanPhotos = scanMaps
-        .map(Photo.fromMap)
-        .where((p) => p.photoId != null)
-        .toList();
-    final byScanId = {for (final p in scanPhotos) p.photoId!: p};
+    for (final id in ids) {
+      final scan = await LocalDb.instance.getScanById(id);
+      if (scan == null) continue;
+
+      final disease = displayDiseaseName(scan);
+      final severity = statusForScan(
+        scan,
+        anthracnoseOnly: false,
+        notApplicableLabel: 'Not Applicable',
+      );
+
+      photosByScanId[id] = Photo(
+        id: scan.id,
+        name: disease == 'Unknown Disease' ? scan.title : disease,
+        data: '',
+        timestamp: scan.timestamp,
+        path: scan.imagePath.trim().isNotEmpty ? scan.imagePath : null,
+        title: scan.title,
+        description: scan.description,
+        imageUrl: scan.imageUrl.trim().isNotEmpty ? scan.imageUrl : null,
+        checksum: scan.checksum,
+        source: scan.source,
+        updatedAt: scan.updatedAt,
+        disease: disease,
+        severityLabel: severity,
+        confidence: scan.confidence,
+        severityValue: scan.severityValue,
+        photoId: scan.photoId,
+        scanDir: scan.scanDir,
+      );
+    }
+
+    final fallbackRows = await LocalDb.instance.getPhotosByScanIds(ids);
+    for (final row in fallbackRows) {
+      final photo = Photo.fromMap(row);
+      final scanId = photo.photoId;
+      if (scanId == null || photosByScanId.containsKey(scanId)) continue;
+      photosByScanId[scanId] = photo;
+    }
 
     final ordered = <Photo>[];
-    for (final id in ids) {
-      final direct = byPhotoId[id];
-      if (direct != null) {
-        ordered.add(direct);
-        continue;
+    for (final raw in trimmed) {
+      final id = int.tryParse(raw);
+      if (id != null) {
+        final resolved = photosByScanId[id];
+        if (resolved != null) {
+          ordered.add(resolved);
+          continue;
+        }
       }
-      final byScan = byScanId[id];
-      if (byScan != null) {
-        ordered.add(byScan);
-      }
+
+      // Support older non-ID album entries that store direct local paths.
+      ordered.add(
+        Photo(
+          name: widget.albumTitle,
+          data: '',
+          timestamp: DateTime.now().toIso8601String(),
+          path: raw,
+          title: widget.albumTitle,
+        ),
+      );
     }
+
     return ordered;
   }
 
