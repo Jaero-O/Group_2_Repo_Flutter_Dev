@@ -37,30 +37,51 @@ class DeviceNotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  Future<void>? _initFuture;
 
   Future<void> init() async {
     if (_initialized) return;
+    if (_initFuture != null) {
+      await _initFuture;
+      return;
+    }
 
-    const android = AndroidInitializationSettings('@mipmap/launcher_icon');
-    const ios = DarwinInitializationSettings();
-    const settings = InitializationSettings(android: android, iOS: ios);
+    _initFuture = _initializeInternal();
+    await _initFuture;
+  }
 
-    await _plugin.initialize(settings);
+  Future<void> _initializeInternal() async {
+    try {
+      const android = AndroidInitializationSettings('@mipmap/launcher_icon');
+      const ios = DarwinInitializationSettings();
+      const settings = InitializationSettings(android: android, iOS: ios);
 
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin
-    >();
-    await androidPlugin?.createNotificationChannel(_riskChannel);
-    await androidPlugin?.createNotificationChannel(_syncChannel);
-    await androidPlugin?.requestNotificationsPermission();
+      await _plugin.initialize(settings);
 
-    final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-      IOSFlutterLocalNotificationsPlugin
-    >();
-    await iosPlugin?.requestPermissions(alert: true, badge: true, sound: true);
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+      await androidPlugin?.createNotificationChannel(_riskChannel);
+      await androidPlugin?.createNotificationChannel(_syncChannel);
+      await androidPlugin?.requestNotificationsPermission();
 
-    await _ensureReminderSchedules();
-    _initialized = true;
+      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin
+      >();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      await _ensureReminderSchedules();
+      _initialized = true;
+    } catch (_) {
+      // Keep app startup responsive even when notification setup fails.
+      _initialized = true;
+    } finally {
+      _initFuture = null;
+    }
   }
 
   Future<void> _ensureReminderSchedules() async {
@@ -86,23 +107,54 @@ class DeviceNotificationService {
       iOS: DarwinNotificationDetails(),
     );
 
-    await _plugin.periodicallyShow(
-      _dailyReminderId,
-      'Mangofy Daily Risk Check',
-      'Open Mangofy to review today\'s anthracnose risk and recommendations.',
-      RepeatInterval.daily,
-      dailyDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    await _schedulePeriodicReminder(
+      id: _dailyReminderId,
+      title: 'Mangofy Daily Risk Check',
+      body: 'Open Mangofy to review today\'s anthracnose risk and recommendations.',
+      interval: RepeatInterval.daily,
+      details: dailyDetails,
     );
 
-    await _plugin.periodicallyShow(
-      _weeklyReminderId,
-      'Mangofy Weekly Forecast',
-      'Review this week\'s disease trend and action priorities.',
-      RepeatInterval.weekly,
-      weeklyDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    await _schedulePeriodicReminder(
+      id: _weeklyReminderId,
+      title: 'Mangofy Weekly Forecast',
+      body: 'Review this week\'s disease trend and action priorities.',
+      interval: RepeatInterval.weekly,
+      details: weeklyDetails,
     );
+  }
+
+  Future<void> _schedulePeriodicReminder({
+    required int id,
+    required String title,
+    required String body,
+    required RepeatInterval interval,
+    required NotificationDetails details,
+  }) async {
+    try {
+      await _plugin.periodicallyShow(
+        id,
+        title,
+        body,
+        interval,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    } catch (_) {
+      // Fallback for devices/OS versions where exact alarms are restricted.
+      try {
+        await _plugin.periodicallyShow(
+          id,
+          title,
+          body,
+          interval,
+          details,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        );
+      } catch (_) {
+        // Ignore scheduling failures; manual alerts can still work.
+      }
+    }
   }
 
   Future<void> notifySyncSummary({

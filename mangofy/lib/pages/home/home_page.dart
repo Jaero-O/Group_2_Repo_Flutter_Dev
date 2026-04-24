@@ -9,6 +9,7 @@ import '../../services/notification_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/weather_service.dart';
 import 'disease_data.dart';
+import 'disease_seasonal_card.dart';
 import 'notifications_page.dart';
 import 'anthracnose_risk_forecast_card.dart';
 import 'recommended_actions_card.dart';
@@ -544,6 +545,10 @@ class _HomePageState extends State<HomePage> {
                           diseases: diseases,
                           totalCases: distributionTotal,
                         ),
+
+                        const SizedBox(height: 30),
+
+                        const DiseaseSeasonalCard(),
 
                         const SizedBox(height: 30),
 

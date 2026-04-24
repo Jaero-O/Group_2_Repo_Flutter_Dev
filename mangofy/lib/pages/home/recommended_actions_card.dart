@@ -96,6 +96,42 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
     }
   }
 
+  String _formatDiseaseLabel(String rawDisease) {
+    final normalized = rawDisease.trim();
+    if (normalized.isEmpty) return 'General Orchard';
+    if (normalized.toLowerCase() == 'no active disease') {
+      return 'General Orchard';
+    }
+    return normalized;
+  }
+
+  String _severitySummaryLabel(ScanSummary summary) {
+    final advanced = summary.advancedStageCount;
+    final early = summary.earlyStageCount;
+    final healthy = summary.healthyCount;
+
+    if (advanced >= early && advanced >= healthy && advanced > 0) {
+      return 'Advanced Stage Priority';
+    }
+    if (early >= healthy && early > 0) {
+      return 'Early Stage Priority';
+    }
+    return 'Preventive Focus';
+  }
+
+  String _trendSummaryLabel(String trendDirection) {
+    switch (_normalizeTrend(trendDirection)) {
+      case 'worsening':
+        return 'Trend: Worsening';
+      case 'improving':
+        return 'Trend: Improving';
+      case 'stable':
+        return 'Trend: Stable';
+      default:
+        return 'Trend: Mixed';
+    }
+  }
+
   Color _colorFromHex(String hex) {
     final raw = hex.trim().replaceFirst('#', '');
     if (raw.length != 6) {
@@ -133,9 +169,12 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
         }
 
         final actions = snapshot.data ?? const <ActionItem>[];
+        final diseaseLabel = _formatDiseaseLabel(widget.primaryDisease);
+        final severityLabel = _severitySummaryLabel(widget.summary);
+        final trendLabel = _trendSummaryLabel(widget.trendDirection);
 
         return Card(
-          color: const Color(0xFFFAFAFA),
+          color: Colors.white,
           elevation: 3,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -147,14 +186,19 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Action Library Suggestions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            diseaseLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF666666),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     IconButton(
@@ -165,10 +209,19 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _ContextChip(label: severityLabel),
+                    _ContextChip(label: trendLabel),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 if (actions.isEmpty)
                   const Text(
-                    'No matching actions available for this trend. Add actions in the library.',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF777777)),
+                    'No matching actions found for the current condition. Open the action library to add disease-specific steps.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF777777), height: 1.4),
                   )
                 else
                   ...actions.asMap().entries.map((entry) {
@@ -201,6 +254,16 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Text(
+                                    'Step ${index + 1}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF888888),
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
                                   Text(
                                     item.title,
                                     style: const TextStyle(
@@ -237,6 +300,32 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
           ),
         );
       },
+    );
+  }
+}
+
+class _ContextChip extends StatelessWidget {
+  final String label;
+
+  const _ContextChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F2E8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFCFE3CF), width: 1),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF2E7D32),
+        ),
+      ),
     );
   }
 }

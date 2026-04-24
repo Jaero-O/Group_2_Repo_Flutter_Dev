@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mangofy/pages/home/home_page.dart';
@@ -10,8 +12,10 @@ import 'splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DeviceNotificationService.instance.init();
   runApp(const MyApp());
+
+  // Do not block startup on notification setup.
+  unawaited(DeviceNotificationService.instance.init());
 }
 
 class MyApp extends StatelessWidget {

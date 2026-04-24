@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../model/action_item.dart';
 import '../../services/local_db.dart';
@@ -38,6 +39,32 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
     {'label': 'Eco', 'icon': Icons.eco},
   ];
 
+  String _normalizeSeverityOption(String? raw) {
+    final value = (raw ?? '').trim().toLowerCase();
+    if (_severityOptions.contains(value)) return value;
+    if (value == 'moderate' || value == 'mid') return 'early';
+    if (value == 'high' || value == 'severe' || value == 'critical') {
+      return 'advanced';
+    }
+    return 'all';
+  }
+
+  String _normalizeTrendOption(String? raw) {
+    final value = (raw ?? '').trim().toLowerCase();
+    if (_trendOptions.contains(value)) return value;
+    if (value == 'any' || value.isEmpty) return 'any';
+    return 'any';
+  }
+
+  int _normalizeIconOption(int? codePoint) {
+    final fallback = Icons.science_outlined.codePoint;
+    if (codePoint == null) return fallback;
+    final contains = _iconOptions.any(
+      (option) => (option['icon'] as IconData).codePoint == codePoint,
+    );
+    return contains ? codePoint : fallback;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,24 +77,92 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
     });
   }
 
+  ButtonStyle _secondaryButtonStyle() {
+    return TextButton.styleFrom(
+      foregroundColor: Colors.black,
+      backgroundColor: Colors.grey[200],
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  ButtonStyle _actionButtonStyle(Color backgroundColor) {
+    return TextButton.styleFrom(
+      foregroundColor: Colors.white,
+      backgroundColor: backgroundColor,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
   Future<void> _deleteAction(ActionItem item) async {
     if (item.id == null) return;
     final shouldDelete = await showDialog<bool>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete Action'),
-          content: Text('Delete "${item.title}"?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          content: SizedBox(
+            width: MediaQuery.of(dialogContext).size.width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  'Delete "${item.title}"?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to delete this action?\nThis action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        style: _secondaryButtonStyle(),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        style: _actionButtonStyle(Colors.red),
+                        child: Text(
+                          'Delete',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete'),
-            ),
-          ],
+          ),
         );
       },
     );
@@ -78,196 +173,22 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
   }
 
   Future<void> _showActionEditor({ActionItem? existing}) async {
-    final diseaseController = TextEditingController(
-      text: existing?.diseaseKeyword ?? 'default',
-    );
-    final titleController = TextEditingController(text: existing?.title ?? '');
-    final descriptionController = TextEditingController(
-      text: existing?.description ?? '',
-    );
-    final colorController = TextEditingController(
-      text: existing?.colorHex ?? '#2E7D32',
-    );
-    final priorityController = TextEditingController(
-      text: (existing?.priority ?? 100).toString(),
-    );
-
-    String severity = existing?.severityTrigger ?? 'all';
-    String trend = existing?.trendTrigger ?? 'any';
-    int iconCode = existing?.iconCode ?? Icons.science_outlined.codePoint;
-
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(existing == null ? 'Add Action' : 'Edit Action'),
-              content: SizedBox(
-                width: 380,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: diseaseController,
-                        decoration: const InputDecoration(
-                          labelText: 'Disease keyword',
-                          hintText: 'anthracnose / default',
-                        ),
-                      ),
-                      TextField(
-                        controller: titleController,
-                        decoration: const InputDecoration(labelText: 'Title'),
-                      ),
-                      TextField(
-                        controller: descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
-                        ),
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: severity,
-                        decoration: const InputDecoration(
-                          labelText: 'Severity trigger',
-                        ),
-                        items: _severityOptions
-                            .map(
-                              (option) => DropdownMenuItem<String>(
-                                value: option,
-                                child: Text(option),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            severity = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: trend,
-                        decoration: const InputDecoration(
-                          labelText: 'Trend trigger',
-                        ),
-                        items: _trendOptions
-                            .map(
-                              (option) => DropdownMenuItem<String>(
-                                value: option,
-                                child: Text(option),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            trend = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<int>(
-                        value: iconCode,
-                        decoration: const InputDecoration(labelText: 'Icon'),
-                        items: _iconOptions
-                            .map(
-                              (option) => DropdownMenuItem<int>(
-                                value: (option['icon'] as IconData).codePoint,
-                                child: Row(
-                                  children: [
-                                    Icon(option['icon'] as IconData, size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(option['label'] as String),
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            iconCode = value;
-                          });
-                        },
-                      ),
-                      TextField(
-                        controller: colorController,
-                        decoration: const InputDecoration(
-                          labelText: 'Color hex',
-                          hintText: '#2E7D32',
-                        ),
-                      ),
-                      TextField(
-                        controller: priorityController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Priority (lower = first)',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final disease = diseaseController.text.trim().toLowerCase();
-                    final title = titleController.text.trim();
-                    final description = descriptionController.text.trim();
-
-                    if (disease.isEmpty ||
-                        title.isEmpty ||
-                        description.isEmpty) {
-                      return;
-                    }
-
-                    final priority =
-                        int.tryParse(priorityController.text.trim()) ?? 100;
-
-                    await LocalDb.instance.upsertAction(
-                      ActionItem(
-                        id: existing?.id,
-                        diseaseKeyword: disease,
-                        severityTrigger: severity,
-                        trendTrigger: trend,
-                        title: title,
-                        description: description,
-                        iconCode: iconCode,
-                        colorHex: colorController.text.trim().isEmpty
-                            ? '#2E7D32'
-                            : colorController.text.trim(),
-                        priority: priority,
-                        isActive: true,
-                      ),
-                    );
-
-                    if (context.mounted) {
-                      Navigator.pop(context, true);
-                    }
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
+      builder: (dialogContext) {
+        return _ActionEditorDialog(
+          existing: existing,
+          initialSeverity: _normalizeSeverityOption(existing?.severityTrigger),
+          initialTrend: _normalizeTrendOption(existing?.trendTrigger),
+          initialIconCode: _normalizeIconOption(existing?.iconCode),
+          severityOptions: _severityOptions,
+          trendOptions: _trendOptions,
+          iconOptions: _iconOptions,
+          secondaryButtonStyleBuilder: _secondaryButtonStyle,
+          actionButtonStyleBuilder: _actionButtonStyle,
         );
       },
     );
-
-    diseaseController.dispose();
-    titleController.dispose();
-    descriptionController.dispose();
-    colorController.dispose();
-    priorityController.dispose();
 
     if (saved == true) {
       _reload();
@@ -299,7 +220,14 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Action Library')),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: Colors.black87,
+        title: const Text('Action Library'),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showActionEditor(),
         child: const Icon(Icons.add),
@@ -367,8 +295,10 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
                           return false;
                         },
                         child: Card(
+                          color: Colors.white,
                           child: ListTile(
                             onTap: () => _showActionEditor(existing: item),
+                            onLongPress: () => _deleteAction(item),
                             leading: CircleAvatar(
                               backgroundColor: itemColor.withValues(
                                 alpha: 0.15,
@@ -397,6 +327,287 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _ActionEditorDialog extends StatefulWidget {
+  final ActionItem? existing;
+  final String initialSeverity;
+  final String initialTrend;
+  final int initialIconCode;
+  final List<String> severityOptions;
+  final List<String> trendOptions;
+  final List<Map<String, dynamic>> iconOptions;
+  final ButtonStyle Function() secondaryButtonStyleBuilder;
+  final ButtonStyle Function(Color) actionButtonStyleBuilder;
+
+  const _ActionEditorDialog({
+    required this.existing,
+    required this.initialSeverity,
+    required this.initialTrend,
+    required this.initialIconCode,
+    required this.severityOptions,
+    required this.trendOptions,
+    required this.iconOptions,
+    required this.secondaryButtonStyleBuilder,
+    required this.actionButtonStyleBuilder,
+  });
+
+  @override
+  State<_ActionEditorDialog> createState() => _ActionEditorDialogState();
+}
+
+class _ActionEditorDialogState extends State<_ActionEditorDialog> {
+  late final TextEditingController _diseaseController;
+  late final TextEditingController _titleController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _colorController;
+  late final TextEditingController _priorityController;
+
+  late String _severity;
+  late String _trend;
+  late int _iconCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _diseaseController = TextEditingController(
+      text: widget.existing?.diseaseKeyword ?? 'default',
+    );
+    _titleController = TextEditingController(text: widget.existing?.title ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.existing?.description ?? '',
+    );
+    _colorController = TextEditingController(
+      text: widget.existing?.colorHex ?? '#2E7D32',
+    );
+    _priorityController = TextEditingController(
+      text: (widget.existing?.priority ?? 100).toString(),
+    );
+
+    _severity = widget.initialSeverity;
+    _trend = widget.initialTrend;
+    _iconCode = widget.initialIconCode;
+  }
+
+  @override
+  void dispose() {
+    _diseaseController.dispose();
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _colorController.dispose();
+    _priorityController.dispose();
+    super.dispose();
+  }
+
+  InputDecoration _inputDecoration({required String label, String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.grey[50],
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Colors.grey, width: 1),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 2.5),
+      ),
+    );
+  }
+
+  Future<void> _onSave() async {
+    final disease = _diseaseController.text.trim().toLowerCase();
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+
+    if (disease.isEmpty || title.isEmpty || description.isEmpty) {
+      return;
+    }
+
+    final priority = int.tryParse(_priorityController.text.trim()) ?? 100;
+
+    await LocalDb.instance.upsertAction(
+      ActionItem(
+        id: widget.existing?.id,
+        diseaseKeyword: disease,
+        severityTrigger: _severity,
+        trendTrigger: _trend,
+        title: title,
+        description: description,
+        iconCode: _iconCode,
+        colorHex: _colorController.text.trim().isEmpty
+            ? '#2E7D32'
+            : _colorController.text.trim(),
+        priority: priority,
+        isActive: true,
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      title: null,
+      content: SizedBox(
+        width: MediaQuery.of(context).size.width,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.existing == null ? 'Add Action' : 'Edit Action',
+                textAlign: TextAlign.left,
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 20),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Set action details for disease mitigation',
+                textAlign: TextAlign.left,
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _diseaseController,
+                decoration: _inputDecoration(
+                  label: 'Disease keyword',
+                  hint: 'anthracnose / default',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _titleController,
+                decoration: _inputDecoration(label: 'Title'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 3,
+                decoration: _inputDecoration(label: 'Description'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _severity,
+                decoration: _inputDecoration(label: 'Severity trigger'),
+                items: widget.severityOptions
+                    .map(
+                      (option) => DropdownMenuItem<String>(
+                        value: option,
+                        child: Text(option),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _severity = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _trend,
+                decoration: _inputDecoration(label: 'Trend trigger'),
+                items: widget.trendOptions
+                    .map(
+                      (option) => DropdownMenuItem<String>(
+                        value: option,
+                        child: Text(option),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _trend = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                value: _iconCode,
+                decoration: _inputDecoration(label: 'Icon'),
+                items: widget.iconOptions
+                    .map(
+                      (option) => DropdownMenuItem<int>(
+                        value: (option['icon'] as IconData).codePoint,
+                        child: Row(
+                          children: [
+                            Icon(option['icon'] as IconData, size: 18),
+                            const SizedBox(width: 8),
+                            Text(option['label'] as String),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _iconCode = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _colorController,
+                decoration: _inputDecoration(label: 'Color hex', hint: '#2E7D32'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _priorityController,
+                keyboardType: TextInputType.number,
+                decoration: _inputDecoration(label: 'Priority (lower = first)'),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      style: widget.secondaryButtonStyleBuilder(),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: _onSave,
+                      style: widget.actionButtonStyleBuilder(const Color(0xFF4CAF50)),
+                      child: Text(
+                        'Save',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
