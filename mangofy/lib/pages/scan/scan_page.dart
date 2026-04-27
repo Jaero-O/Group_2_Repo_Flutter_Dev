@@ -193,7 +193,13 @@ class _ScanPageState extends State<ScanPage> {
     _isLoadingHistory = true;
 
     try {
-      final List<ScanItem> history = await LocalDb.instance.getAllScans();
+      final List<ScanItem> history = (await LocalDb.instance.getAllScans())
+          .where(
+            (scan) =>
+                scan.imagePath.trim().isNotEmpty ||
+                scan.imageUrl.trim().isNotEmpty,
+          )
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -444,8 +450,10 @@ class _ScanPageState extends State<ScanPage> {
     final List<ScanItem> statsSource = _selectedDisease == null
         ? _scanHistory
         : _scanHistory
-            .where((record) => _displayDiseaseName(record) == _selectedDisease)
-            .toList();
+              .where(
+                (record) => _displayDiseaseName(record) == _selectedDisease,
+              )
+              .toList();
     final int totalScans = statsSource.length;
     final int healthyScans = statsSource
         .where((record) => _statusForSummary(record) == 'Healthy')

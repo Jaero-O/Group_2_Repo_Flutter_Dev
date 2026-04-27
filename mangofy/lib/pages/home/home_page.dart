@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../model/notification_item.dart';
 import '../../model/orchard_snapshot.dart';
@@ -32,6 +32,8 @@ class _HomePageState extends State<HomePage> {
   int? _selectedTreeId;
   bool _isRefreshing = false;
   bool _hasPendingRefresh = false;
+  bool _isSyncing = false;
+  OrchardSnapshot? _lastSnapshot;
 
   @override
   void initState() {
@@ -39,12 +41,23 @@ class _HomePageState extends State<HomePage> {
     _loadTrees();
     _applyDashboardSnapshot(_selectedTreeId);
     SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
+    SyncService.instance.progressNotifier.addListener(_onSyncProgressChanged);
+    _isSyncing = SyncService.instance.progressNotifier.value != null;
   }
 
   @override
   void dispose() {
     SyncService.instance.lastSyncNotifier.removeListener(_onSyncUpdated);
+    SyncService.instance.progressNotifier.removeListener(_onSyncProgressChanged);
     super.dispose();
+  }
+
+  void _onSyncProgressChanged() {
+    final isSyncingNow = SyncService.instance.progressNotifier.value != null;
+    if (!mounted || _isSyncing == isSyncingNow) return;
+    setState(() {
+      _isSyncing = isSyncingNow;
+    });
   }
 
   void _onSyncUpdated() {
@@ -225,12 +238,17 @@ class _HomePageState extends State<HomePage> {
     required ScanSummary summary,
   }) {
     final anthracnoseCount = stageSummary['total'] ?? 0;
-    return NotificationService.generate(
+    final generated = NotificationService.generate(
       anthracnoseCount: anthracnoseCount,
       stageBreakdown: stageSummary,
       weeklyTrend: trendSeries,
       summary: summary,
     );
+
+    final syncItem = SyncService.instance.lastSyncNotificationItem;
+    if (syncItem == null) return generated;
+
+    return <NotificationItem>[syncItem, ...generated];
   }
 
   @override
@@ -243,11 +261,13 @@ class _HomePageState extends State<HomePage> {
             future: _snapshotFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData) {
+                  !snapshot.hasData &&
+                  _lastSnapshot == null) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              if (snapshot.hasError && !snapshot.hasData) {
+              if (snapshot.hasError && !snapshot.hasData &&
+                  _lastSnapshot == null) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -294,7 +314,12 @@ class _HomePageState extends State<HomePage> {
                 },
               );
 
-              final snapshotData = snapshot.data ?? emptySnapshot;
+              final activeSnapshot = snapshot.data;
+              if (activeSnapshot != null) {
+                _lastSnapshot = activeSnapshot;
+              }
+              final snapshotData =
+                  activeSnapshot ?? _lastSnapshot ?? emptySnapshot;
               final summaryData = snapshotData.summary;
               final notifications = _buildNotifications(
                 stageSummary: snapshotData.anthracnoseStageSummary,
@@ -336,7 +361,16 @@ class _HomePageState extends State<HomePage> {
 
               return SizedBox(
                 height: constraints.maxHeight,
-                child: RefreshIndicator(
+                child: Column(
+                  children: [
+                    if (_isSyncing)
+                      const LinearProgressIndicator(
+                        minHeight: 3,
+                        color: Color(0xFF2E7D32),
+                        backgroundColor: Color(0xFFEAF5EA),
+                      ),
+                    Expanded(
+                      child: RefreshIndicator(
                   onRefresh: _refresh,
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -623,6 +657,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
+              ),
+              ],
+            ),
               );
             },
           );
@@ -631,3 +668,4 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+

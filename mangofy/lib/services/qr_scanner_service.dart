@@ -1,7 +1,10 @@
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class QrScannerService {
-  final MobileScannerController controller = MobileScannerController();
+  final MobileScannerController controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    formats: [BarcodeFormat.qrCode],
+  );
 
   /// Returns the raw string value from the first detected QR barcode.
   String? extractQrValue(BarcodeCapture capture) {

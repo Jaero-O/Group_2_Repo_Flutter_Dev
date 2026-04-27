@@ -8,7 +8,9 @@ import 'package:mangofy/pages/gallery/gallery_page.dart';
 import 'package:mangofy/pages/dataset/dataset_page.dart';
 import 'package:mangofy/pages/scanner_page.dart';
 import 'package:mangofy/services/device_notification_service.dart';
-import 'splash_screen.dart'; 
+import 'package:mangofy/services/pi_polling_service.dart';
+
+import 'splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,13 +44,41 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage>
+    with WidgetsBindingObserver {
   int navIndex = 0;
   int pageIndex = 0;
 
   final List<bool> _isPageBuilt = [true, false, false, false];
 
   static const Color selectedColor = Color(0xFF007700);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    PiPollingService.instance.startPolling();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      PiPollingService.instance.startPolling();
+      return;
+    }
+
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      PiPollingService.instance.stopPolling();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PiPollingService.instance.stopPolling();
+    super.dispose();
+  }
 
   Future<void> _openQrScanner() async {
     final imported = await Navigator.of(context).push<bool>(

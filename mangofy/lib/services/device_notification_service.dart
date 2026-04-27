@@ -1,7 +1,9 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../model/notification_item.dart';
 import '../model/risk_assessment.dart';
+import 'notification_service.dart';
 import 'local_db.dart';
 import 'risk_calculator.dart';
 
@@ -161,6 +163,8 @@ class DeviceNotificationService {
     required int importedScans,
     required int failures,
   }) async {
+    if (importedScans == 0 && failures == 0) return;
+
     await init();
 
     final body = failures > 0
@@ -188,6 +192,7 @@ class DeviceNotificationService {
     final trend = await LocalDb.instance.getDiseaseWeeklyTrendSeries(
       diseaseKeyword: 'anthracnose',
     );
+    final summary = await LocalDb.instance.getScanSummary();
     final weather = await LocalDb.instance.getCachedWeather();
 
     final assessment = RiskCalculator.computeRisk(
@@ -218,9 +223,28 @@ class DeviceNotificationService {
       1,
     );
 
-    final body = '$levelText anthracnose risk from $sourceLabel. '
+    final generatedItems = NotificationService.generate(
+      anthracnoseCount: stageSummary['total'] ?? 0,
+      stageBreakdown: stageSummary,
+      weeklyTrend: trend,
+      summary: summary,
+    );
+
+    NotificationItem? alignedItem;
+    for (final item in generatedItems) {
+      if (item.type == NotificationType.alert ||
+          item.type == NotificationType.warning) {
+        alignedItem = item;
+        break;
+      }
+    }
+
+    final fallbackBody = '$levelText anthracnose risk from $sourceLabel. '
         'Infection probability $infectionPct%. '
         'Estimated yield loss $yieldLossPct%.';
+
+    final title = alignedItem?.title ?? 'Mangofy Risk Alert';
+    final body = alignedItem?.body ?? fallbackBody;
 
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -233,7 +257,7 @@ class DeviceNotificationService {
       iOS: DarwinNotificationDetails(),
     );
 
-    await _plugin.show(_riskAlertId, 'Mangofy Risk Alert', body, details);
+    await _plugin.show(_riskAlertId, title, body, details);
     await prefs.setString(_lastRiskAlertIsoKey, now.toIso8601String());
   }
 

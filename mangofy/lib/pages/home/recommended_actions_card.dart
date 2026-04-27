@@ -144,6 +144,28 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
     return Color(0xFF000000 + value);
   }
 
+  static const List<IconData> _supportedActionIcons = <IconData>[
+    Icons.science_outlined,
+    Icons.content_cut,
+    Icons.water_drop_outlined,
+    Icons.air,
+    Icons.delete_outline,
+    Icons.cleaning_services_outlined,
+    Icons.shield_outlined,
+    Icons.eco,
+    Icons.local_shipping_outlined,
+    Icons.delete_sweep_outlined,
+    Icons.health_and_safety_outlined,
+    Icons.spa_outlined,
+  ];
+
+  IconData _iconForCode(int codePoint) {
+    for (final icon in _supportedActionIcons) {
+      if (icon.codePoint == codePoint) return icon;
+    }
+    return Icons.science_outlined;
+  }
+
   Future<void> _openActionLibrary() async {
     await Navigator.push(
       context,
@@ -241,10 +263,7 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
-                                IconData(
-                                  item.iconCode,
-                                  fontFamily: 'MaterialIcons',
-                                ),
+                                _iconForCode(item.iconCode),
                                 color: color,
                                 size: 24,
                               ),
