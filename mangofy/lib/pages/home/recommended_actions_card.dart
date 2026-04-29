@@ -144,28 +144,6 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
     return Color(0xFF000000 + value);
   }
 
-  static const List<IconData> _supportedActionIcons = <IconData>[
-    Icons.science_outlined,
-    Icons.content_cut,
-    Icons.water_drop_outlined,
-    Icons.air,
-    Icons.delete_outline,
-    Icons.cleaning_services_outlined,
-    Icons.shield_outlined,
-    Icons.eco,
-    Icons.local_shipping_outlined,
-    Icons.delete_sweep_outlined,
-    Icons.health_and_safety_outlined,
-    Icons.spa_outlined,
-  ];
-
-  IconData _iconForCode(int codePoint) {
-    for (final icon in _supportedActionIcons) {
-      if (icon.codePoint == codePoint) return icon;
-    }
-    return Icons.science_outlined;
-  }
-
   Future<void> _openActionLibrary() async {
     await Navigator.push(
       context,
@@ -207,7 +185,22 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.healing,
+                        color: Color(0xFF2E7D32),
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,10 +208,15 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                           Text(
                             diseaseLabel,
                             style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
                             ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$severityLabel • $trendLabel',
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
                           ),
                         ],
                       ),
@@ -231,14 +229,7 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _ContextChip(label: severityLabel),
-                    _ContextChip(label: trendLabel),
-                  ],
-                ),
+                // Context chips removed per UX request.
                 const SizedBox(height: 12),
                 if (actions.isEmpty)
                   const Text(
@@ -263,7 +254,10 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
-                                _iconForCode(item.iconCode),
+                                IconData(
+                                  item.iconCode,
+                                  fontFamily: 'MaterialIcons',
+                                ),
                                 color: color,
                                 size: 24,
                               ),
@@ -323,28 +317,4 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
   }
 }
 
-class _ContextChip extends StatelessWidget {
-  final String label;
-
-  const _ContextChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F2E8),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFCFE3CF), width: 1),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF2E7D32),
-        ),
-      ),
-    );
-  }
-}
+// Context chips removed per UX request.
