@@ -20,7 +20,7 @@ class PiQrEndpoints {
     this.scansAllPath = '/api/scan/all',
     this.scansSincePathTemplate = '/api/scan/since/{timestamp}',
     this.scanByIdPathTemplate = '/api/scan/{id}',
-    this.imagePathTemplate = '/api/image/{filename}',
+    this.imagePathTemplate = '/api/scan/{id}/image/{filename}',
   });
 
   static String? _readString(Map<String, dynamic> obj, List<String> keys) {
@@ -70,10 +70,19 @@ class PiQrEndpoints {
     final normalized = uri != null && uri.hasScheme && uri.hasAuthority
         ? (uri.path.isEmpty ? '/' : uri.path)
         : trimmed;
-    final path = normalized.startsWith('/') ? normalized : '/$normalized';
+    var path = normalized.startsWith('/') ? normalized : '/$normalized';
 
-    if (path.contains('<id>')) return path.replaceAll('<id>', '{id}');
-    if (path.contains(':id')) return path.replaceAll(':id', '{id}');
+    if (path.contains('<id>')) path = path.replaceAll('<id>', '{id}');
+    if (path.contains(':id')) path = path.replaceAll(':id', '{id}');
+
+    if (!path.contains('{filename}')) {
+      if (path.endsWith('/')) {
+        path = '$path{filename}';
+      } else {
+        path = '$path/{filename}';
+      }
+    }
+
     return path;
   }
 
@@ -121,9 +130,15 @@ class PiQrEndpoints {
         '/api/scan/{id}';
 
     final imagePathTemplate = _normalizeTemplate(
-          _readString(endpointsObj, const ['imagePathTemplate', 'image_path_template', 'image_template']),
-        ) ??
-        '/api/image/{filename}';
+      _readString(endpointsObj, const [
+        'imagePathTemplate',
+        'image_path_template',
+        'image_template',
+        'imageUrlBase',
+        'image_url_base',
+      ]),
+    ) ??
+    '/api/image/{filename}';
 
     return PiQrEndpoints(
       statusPath: statusPath,
@@ -158,9 +173,26 @@ class PiQrEndpoints {
     return template.contains('{id}') ? template.replaceAll('{id}', id) : template;
   }
 
-  String resolveImagePath(String fileName) {
+  String resolveImagePath(String fileName, {int? scanId}) {
     final template = imagePathTemplate;
-    return template.contains('{filename}') ? template.replaceAll('{filename}', fileName) : template;
+    if (template.contains('{scan_id}') || template.contains('{id}')) {
+      if (scanId == null) {
+        throw FormatException(
+          'Image path template requires a scan ID, but none was provided.',
+        );
+      }
+    }
+
+    var path = template;
+    if (scanId != null) {
+      if (path.contains('{scan_id}')) {
+        path = path.replaceAll('{scan_id}', scanId.toString());
+      }
+      if (path.contains('{id}')) {
+        path = path.replaceAll('{id}', scanId.toString());
+      }
+    }
+    return path.contains('{filename}') ? path.replaceAll('{filename}', fileName) : path;
   }
 
   String resolveBulkImagesZipPath(List<String> fileNames) {
