@@ -4,11 +4,17 @@ import '../../services/local_db.dart';
 
 class SeverityProgressionChart extends StatefulWidget {
   final int? treeId;
+  final int? filterMonth;
+  final int? filterYear;
+  final int refreshKey;
   final int weekWindow;
 
   const SeverityProgressionChart({
     super.key,
     this.treeId,
+    this.filterMonth,
+    this.filterYear,
+    this.refreshKey = 0,
     this.weekWindow = 8,
   });
 
@@ -26,6 +32,8 @@ class _SeverityProgressionChartState extends State<SeverityProgressionChart> {
   @override
   void initState() {
     super.initState();
+    _selectedMonth = widget.filterMonth;
+    _selectedYear = widget.filterYear;
     _monthOptionsFuture = _loadMonthOptions();
     _seriesFuture = _loadSeries();
   }
@@ -33,9 +41,12 @@ class _SeverityProgressionChartState extends State<SeverityProgressionChart> {
   @override
   void didUpdateWidget(covariant SeverityProgressionChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.treeId != widget.treeId) {
-      _selectedMonth = null;
-      _selectedYear = null;
+    if (oldWidget.treeId != widget.treeId ||
+        oldWidget.filterMonth != widget.filterMonth ||
+        oldWidget.filterYear != widget.filterYear ||
+        oldWidget.refreshKey != widget.refreshKey) {
+      _selectedMonth = widget.filterMonth;
+      _selectedYear = widget.filterYear;
       _monthOptionsFuture = _loadMonthOptions();
       _seriesFuture = _loadSeries();
     }
@@ -203,7 +214,7 @@ class _SeverityProgressionChartState extends State<SeverityProgressionChart> {
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.07),
+                      color: Colors.black.withValues(alpha: 0.07),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),

@@ -1,11 +1,9 @@
 ﻿import 'package:flutter/material.dart';
 
-import '../../model/notification_item.dart';
 import '../../model/orchard_snapshot.dart';
 import '../../model/scan_summary_model.dart';
 import '../../model/weather_data.dart';
 import '../../services/local_db.dart';
-import '../../services/notification_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/weather_service.dart';
 import 'disease_data.dart';
@@ -33,12 +31,15 @@ class _HomePageState extends State<HomePage> {
   bool _isRefreshing = false;
   bool _hasPendingRefresh = false;
   bool _isSyncing = false;
+  int _unreadNotificationCount = 0;
+  int _severityChartReloadKey = 0;
   OrchardSnapshot? _lastSnapshot;
 
   @override
   void initState() {
     super.initState();
     _loadTrees();
+    _loadUnreadNotificationCount();
     _applyDashboardSnapshot(_selectedTreeId);
     SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
     SyncService.instance.progressNotifier.addListener(_onSyncProgressChanged);
@@ -60,8 +61,21 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _loadUnreadNotificationCount() async {
+    final count = await LocalDb.instance.getUnreadNotificationCount();
+    if (!mounted) return;
+    setState(() {
+      _unreadNotificationCount = count;
+    });
+  }
+
   void _onSyncUpdated() {
+    if (!mounted) return;
+    setState(() {
+      _severityChartReloadKey++;
+    });
     _refresh();
+    _loadUnreadNotificationCount();
   }
 
   Future<void> _loadTrees() async {
@@ -182,6 +196,9 @@ class _HomePageState extends State<HomePage> {
         _hasPendingRefresh = false;
         _refresh();
       }
+      if (mounted) {
+        _loadUnreadNotificationCount();
+      }
     }
   }
 
@@ -230,25 +247,6 @@ class _HomePageState extends State<HomePage> {
     }
 
     return items;
-  }
-
-  List<NotificationItem> _buildNotifications({
-    required Map<String, int> stageSummary,
-    required List<Map<String, dynamic>> trendSeries,
-    required ScanSummary summary,
-  }) {
-    final anthracnoseCount = stageSummary['total'] ?? 0;
-    final generated = NotificationService.generate(
-      anthracnoseCount: anthracnoseCount,
-      stageBreakdown: stageSummary,
-      weeklyTrend: trendSeries,
-      summary: summary,
-    );
-
-    final syncItem = SyncService.instance.lastSyncNotificationItem;
-    if (syncItem == null) return generated;
-
-    return <NotificationItem>[syncItem, ...generated];
   }
 
   @override
@@ -321,19 +319,6 @@ class _HomePageState extends State<HomePage> {
               final snapshotData =
                   activeSnapshot ?? _lastSnapshot ?? emptySnapshot;
               final summaryData = snapshotData.summary;
-              final notifications = _buildNotifications(
-                stageSummary: snapshotData.anthracnoseStageSummary,
-                trendSeries: snapshotData.anthracnoseTrendSeries,
-                summary: summaryData,
-              );
-              final badgeCount = notifications
-                  .where(
-                    (item) =>
-                        item.type == NotificationType.alert ||
-                        item.type == NotificationType.warning,
-                  )
-                  .length;
-
               final diseases = _mapDiseaseDistributionRows(
                 snapshotData.diseaseDistributionRows,
               );
@@ -404,19 +389,18 @@ class _HomePageState extends State<HomePage> {
                                       color: Colors.black87,
                                       size: 28,
                                     ),
-                                    onPressed: () {
-                                      Navigator.push(
+                                    onPressed: () async {
+                                      await Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (context) =>
-                                              NotificationsPage(
-                                                notifications: notifications,
-                                              ),
+                                              const NotificationsPage(),
                                         ),
                                       );
+                                      _loadUnreadNotificationCount();
                                     },
                                   ),
-                                  if (badgeCount > 0)
+                                  if (_unreadNotificationCount > 0)
                                     Positioned(
                                       right: 6,
                                       top: 6,
@@ -436,7 +420,7 @@ class _HomePageState extends State<HomePage> {
                                           minHeight: 18,
                                         ),
                                         child: Text(
-                                          badgeCount > 9 ? '9+' : '$badgeCount',
+                                          _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
                                           textAlign: TextAlign.center,
                                           style: const TextStyle(
                                             color: Colors.white,
@@ -598,7 +582,10 @@ class _HomePageState extends State<HomePage> {
 
                         const SizedBox(height: 30),
 
-                        SeverityProgressionChart(treeId: _selectedTreeId),
+                        SeverityProgressionChart(
+                          treeId: _selectedTreeId,
+                          refreshKey: _severityChartReloadKey,
+                        ),
 
                         const SizedBox(height: 30),
 

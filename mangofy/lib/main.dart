@@ -8,7 +8,6 @@ import 'package:mangofy/pages/gallery/gallery_page.dart';
 import 'package:mangofy/pages/dataset/dataset_page.dart';
 import 'package:mangofy/pages/scanner_page.dart';
 import 'package:mangofy/services/device_notification_service.dart';
-import 'package:mangofy/services/pi_polling_service.dart';
 
 import 'splash_screen.dart';
 
@@ -57,26 +56,22 @@ class _MyHomePageState extends State<MyHomePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    PiPollingService.instance.startPolling();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      PiPollingService.instance.startPolling();
       return;
     }
 
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      PiPollingService.instance.stopPolling();
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    PiPollingService.instance.stopPolling();
     super.dispose();
   }
 
@@ -181,7 +176,7 @@ class _MyHomePageState extends State<MyHomePage>
                   border: Border.all(color: Color(0xFFFAFAFA), width: 3), // Optional ring
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),

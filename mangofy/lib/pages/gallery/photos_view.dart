@@ -446,7 +446,7 @@ class _PhotosViewState extends State<PhotosView> {
               // THINNER PADDING
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: const [
                   BoxShadow(

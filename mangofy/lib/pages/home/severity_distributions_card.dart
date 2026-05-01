@@ -131,7 +131,7 @@ class SeverityDistributionsCard extends StatelessWidget {
     }
 
     return Card(
-      color: const Color(0xFFFAFAFA),
+      color: Colors.white,
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
@@ -139,20 +139,19 @@ class SeverityDistributionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 16),
             _buildSeverityBar(
               label: 'Healthy',
               percentage: '$hInt%',
               range: '(No visible damage)',
               gradient: healthyGradient,
             ),
-
             _buildSeverityBar(
               label: 'Early Stage',
               percentage: '$earlyStageInt%',
               range: '(Early infection signs)',
               gradient: earlyStageGradient,
             ),
-
             _buildSeverityBar(
               label: 'Advanced Stage',
               percentage: '$advancedStageInt%',

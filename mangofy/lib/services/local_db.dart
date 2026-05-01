@@ -9,6 +9,7 @@ import '../model/action_item.dart';
 import '../model/orchard_snapshot.dart';
 import '../model/scan_classification.dart';
 import '../model/weather_data.dart';
+import '../model/notification_item.dart';
 
 class LocalDb {
   LocalDb._();
@@ -356,7 +357,100 @@ class LocalDb {
     );
 
     await _migrateLegacyLocalData(db);
+    // Ensure notifications table exists for persisted in-app alerts
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tbl_notifications(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
     return db;
+  }
+
+  Future<void> insertNotificationItem(NotificationItem item) async {
+    final db = await database;
+    await db.insert('tbl_notifications', {
+      'title': item.title,
+      'body': item.body,
+      'type': item.type.toString().split('.').last,
+      'timestamp': item.timestamp.toIso8601String(),
+      'is_read': item.isRead ? 1 : 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<NotificationItem>> getNotifications({
+    bool includeRead = true,
+  }) async {
+    final db = await database;
+    final whereClause = includeRead ? '' : 'WHERE is_read = 0';
+    final rows = await db.rawQuery('''
+      SELECT id, title, body, type, timestamp, is_read
+      FROM tbl_notifications
+      $whereClause
+      ORDER BY timestamp DESC, id DESC
+    ''');
+
+    return rows
+        .map((row) {
+          final typeText =
+              row['type']?.toString().trim().toLowerCase() ?? 'info';
+          final type = NotificationType.values.firstWhere(
+            (value) => value.toString().split('.').last == typeText,
+            orElse: () => NotificationType.info,
+          );
+          return NotificationItem(
+            id: row['id'] as int?,
+            title: row['title'] as String? ?? '',
+            body: row['body'] as String? ?? '',
+            type: type,
+            timestamp:
+                DateTime.tryParse(row['timestamp'] as String? ?? '') ??
+                DateTime.now(),
+            isRead: (row['is_read'] as int?) == 1,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COUNT(*) AS count
+      FROM tbl_notifications
+      WHERE is_read = 0
+    ''');
+    if (rows.isEmpty) return 0;
+    return rows.first['count'] as int? ?? 0;
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    final db = await database;
+    await db.update(
+      'tbl_notifications',
+      {'is_read': 1},
+      where: 'is_read = ?',
+      whereArgs: [0],
+    );
+  }
+
+  Future<int> getScanCount({int? treeId}) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND tree_id = ?' : '';
+    final args = <Object?>[];
+    if (treeId != null) args.add(treeId);
+
+    final rows = await db.rawQuery('''
+      SELECT COUNT(*) AS count
+      FROM tbl_scan_record
+      WHERE 1 = 1
+      $treeFilter
+    ''', args);
+    if (rows.isEmpty) return 0;
+    return rows.first['count'] as int? ?? 0;
   }
 
   Future<void> _migrateLegacyLocalData(Database db) async {
@@ -1106,30 +1200,10 @@ class LocalDb {
       );
     }
 
-    // Upsert severity level if data provided
-    int? severityLevelId = item.severityLevelId;
+    // Always resolve severity IDs against local DB names to avoid
+    // cross-device FK mismatches when Pi IDs differ from local IDs.
+    int? severityLevelId;
     final resolvedSeverityName = _resolvedSeverityName(item);
-    final shouldReuseProvidedSeverityId =
-        isAnthracnoseScan(item) && resolvedSeverityName != 'Not Applicable';
-    if (!shouldReuseProvidedSeverityId) {
-      severityLevelId = null;
-    }
-
-    if (severityLevelId != null && item.severityLevelName.isNotEmpty) {
-      await db.insert('tbl_severity_level', {
-        'id': severityLevelId,
-        'name': item.severityLevelName,
-        'description': item.severityLevelDescription,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-      await db.rawUpdate(
-        'UPDATE tbl_severity_level SET name=?, description=? WHERE id=?',
-        [
-          item.severityLevelName,
-          item.severityLevelDescription,
-          severityLevelId,
-        ],
-      );
-    }
 
     // Fallback to old logic if IDs not provided
     if (treeId == null && item.treeName.isNotEmpty) {
@@ -1153,19 +1227,30 @@ class LocalDb {
       diseaseId = await _ensureDiseaseByName(db, diseaseName);
     }
 
-    if (severityLevelId == null) {
-      final severityRows = await db.query(
-        'tbl_severity_level',
-        where: 'name = ?',
-        whereArgs: [resolvedSeverityName],
+    if (treeId != null && item.treeName.isEmpty) {
+      final treeRows = await db.query(
+        'tbl_tree',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [treeId],
+        limit: 1,
       );
-      if (severityRows.isEmpty) {
-        severityLevelId = await db.insert('tbl_severity_level', {
-          'name': resolvedSeverityName,
-        });
-      } else {
-        severityLevelId = severityRows.first['id'] as int;
+      if (treeRows.isEmpty) {
+        treeId = null;
       }
+    }
+
+    final severityRows = await db.query(
+      'tbl_severity_level',
+      where: 'name = ?',
+      whereArgs: [resolvedSeverityName],
+    );
+    if (severityRows.isEmpty) {
+      severityLevelId = await db.insert('tbl_severity_level', {
+        'name': resolvedSeverityName,
+      });
+    } else {
+      severityLevelId = severityRows.first['id'] as int;
     }
 
     await db.insert('tbl_scan_record', {
@@ -1199,12 +1284,18 @@ class LocalDb {
             COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
             COALESCE(
               CASE
-                WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+                WHEN TRIM(r.image_path) LIKE '/data/%'
+                  OR TRIM(r.image_path) LIKE '/storage/%'
+                  OR TRIM(r.image_path) LIKE 'file:///%'
+                  OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.image_path), '')
                 ELSE NULL
               END,
               CASE
-                WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
+                  OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                  OR TRIM(r.thumbnail_path) LIKE 'file:///%'
+                  OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.thumbnail_path), '')
                 ELSE NULL
               END,
@@ -1267,12 +1358,18 @@ class LocalDb {
             COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
             COALESCE(
               CASE
-                WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+                WHEN TRIM(r.image_path) LIKE '/data/%'
+                  OR TRIM(r.image_path) LIKE '/storage/%'
+                  OR TRIM(r.image_path) LIKE 'file:///%'
+                  OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.image_path), '')
                 ELSE NULL
               END,
               CASE
-                WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
+                  OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                  OR TRIM(r.thumbnail_path) LIKE 'file:///%'
+                  OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.thumbnail_path), '')
                 ELSE NULL
               END,
@@ -1460,6 +1557,19 @@ class LocalDb {
         treeId ??= existing?['tree_id'] as int?;
         diseaseId ??= existing?['disease_id'] as int?;
 
+        if (treeId != null && item.treeName.isEmpty) {
+          final treeRows = await txn.query(
+            'tbl_tree',
+            columns: ['id'],
+            where: 'id = ?',
+            whereArgs: [treeId],
+            limit: 1,
+          );
+          if (treeRows.isEmpty) {
+            treeId = null;
+          }
+        }
+
         final effectiveDiseaseClass = diseaseName.isNotEmpty
             ? diseaseName
             : (existing?['disease_class'] as String? ?? '');
@@ -1472,23 +1582,15 @@ class LocalDb {
             ? item.imagePath
             : existingImagePath;
 
-        // Upsert severity level
+        // Resolve severity level against local table by name to avoid
+        // foreign-key failures when incoming Pi IDs are from another DB.
         final resolvedSeverityName = _resolvedSeverityName(item);
-        int? severityLevelId = item.severityLevelId;
-        final shouldReuseProvidedSeverityId =
-            isAnthracnoseScan(item) && resolvedSeverityName != 'Not Applicable';
-        if (!shouldReuseProvidedSeverityId) {
-          severityLevelId = null;
-        }
-
+        int? severityLevelId = severityCache[resolvedSeverityName];
         if (severityLevelId == null) {
-          severityLevelId = severityCache[resolvedSeverityName];
-          if (severityLevelId == null) {
-            severityLevelId = await txn.insert('tbl_severity_level', {
-              'name': resolvedSeverityName,
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
-            severityCache[resolvedSeverityName] = severityLevelId;
-          }
+          severityLevelId = await txn.insert('tbl_severity_level', {
+            'name': resolvedSeverityName,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+          severityCache[resolvedSeverityName] = severityLevelId;
         }
 
         // Insert/update scan record
@@ -2350,7 +2452,7 @@ class LocalDb {
         trendTrigger: 'worsening',
         title: 'Targeted Fungicide Spray',
         description:
-          'Start preventive copper or mancozeb sprays at flowering and repeat at label intervals when rainfall and humidity remain high.',
+            'Start preventive copper or mancozeb sprays at flowering and repeat at label intervals when rainfall and humidity remain high.',
         iconCode: 0xe3bb,
         colorHex: '#06850C',
         priority: 1,
@@ -2362,7 +2464,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Prune Infected Growth',
         description:
-          'Prune visibly infected twigs 10-15 cm below lesions and destroy cuttings away from productive blocks.',
+            'Prune visibly infected twigs 10-15 cm below lesions and destroy cuttings away from productive blocks.',
         iconCode: 0xe3c9,
         colorHex: '#2E7D32',
         priority: 2,
@@ -2374,7 +2476,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Improve Air Flow',
         description:
-          'Open dense canopy sections to shorten leaf wetness duration and reduce anthracnose infection pressure.',
+            'Open dense canopy sections to shorten leaf wetness duration and reduce anthracnose infection pressure.',
         iconCode: 0xe3a7,
         colorHex: '#85D133',
         priority: 3,
@@ -2386,7 +2488,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Avoid Overhead Irrigation',
         description:
-          'Use ground-level watering to limit splash dispersal of spores on leaves, flowers, and young fruit.',
+            'Use ground-level watering to limit splash dispersal of spores on leaves, flowers, and young fruit.',
         iconCode: 0xebde,
         colorHex: '#A5E358',
         priority: 4,
@@ -2398,7 +2500,7 @@ class LocalDb {
         trendTrigger: 'worsening',
         title: 'Use Sulfur-Based Spray',
         description:
-          'Apply sulfur or other registered mildew fungicides at early bloom and repeat according to label guidance.',
+            'Apply sulfur or other registered mildew fungicides at early bloom and repeat according to label guidance.',
         iconCode: 0xe3bb,
         colorHex: '#06850C',
         priority: 1,
@@ -2410,7 +2512,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Lower Humidity Around Leaves',
         description:
-          'Prune to improve light penetration and airflow, especially around panicles and newly flushed shoots.',
+            'Prune to improve light penetration and airflow, especially around panicles and newly flushed shoots.',
         iconCode: 0xe3a7,
         colorHex: '#85D133',
         priority: 2,
@@ -2434,7 +2536,7 @@ class LocalDb {
         trendTrigger: 'worsening',
         title: 'Protect at Harvest',
         description:
-          'Protect fruit in pre-harvest windows and apply approved post-harvest sanitation practices to reduce stem-end infection.',
+            'Protect fruit in pre-harvest windows and apply approved post-harvest sanitation practices to reduce stem-end infection.',
         iconCode: 0xe3bb,
         colorHex: '#06850C',
         priority: 1,
@@ -2446,7 +2548,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Handle Fruits Carefully',
         description:
-          'Minimize stem and peel injury during harvest, grading, and transport to prevent rapid decay.',
+            'Minimize stem and peel injury during harvest, grading, and transport to prevent rapid decay.',
         iconCode: 0xe553,
         colorHex: '#85D133',
         priority: 2,
@@ -2482,7 +2584,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Disinfect Tools',
         description:
-          'Disinfect pruning tools between trees using 70 percent alcohol or approved sanitizer solutions.',
+            'Disinfect pruning tools between trees using 70 percent alcohol or approved sanitizer solutions.',
         iconCode: 0xf0554,
         colorHex: '#85D133',
         priority: 2,
@@ -2530,7 +2632,7 @@ class LocalDb {
         trendTrigger: 'any',
         title: 'Reduce Plant Stress',
         description:
-          'Maintain balanced nutrition and irrigation to reduce stress that increases canker susceptibility.',
+            'Maintain balanced nutrition and irrigation to reduce stress that increases canker susceptibility.',
         iconCode: 0xe3f9,
         colorHex: '#A5E358',
         priority: 3,
@@ -2563,12 +2665,18 @@ class LocalDb {
         COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
         COALESCE(
           CASE
-            WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
+            WHEN TRIM(r.image_path) LIKE '/data/%'
+              OR TRIM(r.image_path) LIKE '/storage/%'
+              OR TRIM(r.image_path) LIKE 'file:///%'
+              OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
               THEN NULLIF(TRIM(r.image_path), '')
             ELSE NULL
           END,
           CASE
-            WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+            WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
+              OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+              OR TRIM(r.thumbnail_path) LIKE 'file:///%'
+              OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
               THEN NULLIF(TRIM(r.thumbnail_path), '')
             ELSE NULL
           END,
@@ -2661,8 +2769,26 @@ class LocalDb {
     );
   }
 
+  Future<bool> _tableHasColumn(String tableName, String columnName) async {
+    final db = await database;
+    final rows = await db.rawQuery('PRAGMA table_info($tableName)');
+    return rows.any((row) => row['name']?.toString() == columnName);
+  }
+
   Future<List<Map<String, dynamic>>> getImportableScanImages() async {
     final db = await database;
+    final hasScanImageUrl = await _tableHasColumn(
+      'tbl_scan_record',
+      'image_url',
+    );
+    final scanRecordImageUrlSelect = hasScanImageUrl
+        ? 'NULLIF(TRIM(r.image_url), '
+              ')'
+        : 'NULL';
+    final scanRecordImageUrlWhere = hasScanImageUrl
+        ? 'OR $scanRecordImageUrlSelect IS NOT NULL'
+        : '';
+
     final rows = await db.rawQuery('''
       WITH resolved AS (
         SELECT
@@ -2670,16 +2796,8 @@ class LocalDb {
           r.scan_timestamp,
           COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown') as disease_class,
           COALESCE(
-            CASE
-              WHEN TRIM(r.image_path) LIKE '/data/%' OR TRIM(r.image_path) LIKE '/storage/%'
-                THEN NULLIF(TRIM(r.image_path), '')
-              ELSE NULL
-            END,
-            CASE
-              WHEN TRIM(r.thumbnail_path) LIKE '/data/%' OR TRIM(r.thumbnail_path) LIKE '/storage/%'
-                THEN NULLIF(TRIM(r.thumbnail_path), '')
-              ELSE NULL
-            END,
+            NULLIF(TRIM(r.image_path), ''),
+            NULLIF(TRIM(r.thumbnail_path), ''),
             NULLIF(TRIM((
               SELECT p.path
               FROM tbl_photos p
@@ -2695,6 +2813,7 @@ class LocalDb {
           ) as image_path,
           r.thumbnail_path,
           COALESCE(
+            $scanRecordImageUrlSelect,
             NULLIF(TRIM((
               SELECT p.image_url
               FROM tbl_photos p
@@ -2723,6 +2842,7 @@ class LocalDb {
       WHERE
         (image_path IS NOT NULL AND TRIM(image_path) != '') OR
         (image_url IS NOT NULL AND TRIM(image_url) != '')
+        $scanRecordImageUrlWhere
       ORDER BY COALESCE(
         datetime(replace(replace(substr(scan_timestamp, 1, 19), 'T', ' '), 'Z', '')),
         scan_timestamp
@@ -2734,45 +2854,55 @@ class LocalDb {
 
   Future<List<Map<String, dynamic>>> getScanImageCandidates() async {
     final db = await database;
+    final hasScanImageUrl = await _tableHasColumn(
+      'tbl_scan_record',
+      'image_url',
+    );
+    final scanRecordImageUrlSelect = hasScanImageUrl
+        ? 'NULLIF(TRIM(image_url), '
+              ')'
+        : 'NULL';
+
     return await db.rawQuery('''
       SELECT
         id,
         COALESCE(
-          CASE
-            WHEN TRIM(image_path) LIKE '/data/%' OR TRIM(image_path) LIKE '/storage/%'
-              THEN NULLIF(TRIM(image_path), '')
-            ELSE NULL
-          END,
-          CASE
-            WHEN TRIM(thumbnail_path) LIKE '/data/%' OR TRIM(thumbnail_path) LIKE '/storage/%'
-              THEN NULLIF(TRIM(thumbnail_path), '')
-            ELSE NULL
-          END
+          NULLIF(TRIM(image_path), ''),
+          NULLIF(TRIM(thumbnail_path), ''),
+          $scanRecordImageUrlSelect,
+          NULLIF(TRIM((
+            SELECT p.path
+            FROM tbl_photos p
+            WHERE (
+              p.photo_id = tbl_scan_record.id OR
+              (p.id = tbl_scan_record.id AND (p.photo_id IS NULL OR p.photo_id = tbl_scan_record.id))
+            )
+              AND p.path IS NOT NULL
+              AND TRIM(p.path) != ''
+            ORDER BY p.id DESC
+            LIMIT 1
+          )), '')
         ) AS image_path,
-        NULLIF(TRIM((
-          SELECT p.image_url
-          FROM tbl_photos p
-          WHERE (
-            p.photo_id = tbl_scan_record.id OR
-            (p.id = tbl_scan_record.id AND (p.photo_id IS NULL OR p.photo_id = tbl_scan_record.id))
-          )
-            AND p.image_url IS NOT NULL
-            AND TRIM(p.image_url) != ''
-          ORDER BY p.id DESC
-          LIMIT 1
-        )), '') AS image_url
+        COALESCE(
+          $scanRecordImageUrlSelect,
+          NULLIF(TRIM((
+            SELECT p.image_url
+            FROM tbl_photos p
+            WHERE (
+              p.photo_id = tbl_scan_record.id OR
+              (p.id = tbl_scan_record.id AND (p.photo_id IS NULL OR p.photo_id = tbl_scan_record.id))
+            )
+              AND p.image_url IS NOT NULL
+              AND TRIM(p.image_url) != ''
+            ORDER BY p.id DESC
+            LIMIT 1
+          )), '')
+        ) AS image_url
       FROM tbl_scan_record
       WHERE COALESCE(
-        CASE
-          WHEN TRIM(image_path) LIKE '/data/%' OR TRIM(image_path) LIKE '/storage/%'
-            THEN NULLIF(TRIM(image_path), '')
-          ELSE NULL
-        END,
-        CASE
-          WHEN TRIM(thumbnail_path) LIKE '/data/%' OR TRIM(thumbnail_path) LIKE '/storage/%'
-            THEN NULLIF(TRIM(thumbnail_path), '')
-          ELSE NULL
-        END,
+        NULLIF(TRIM(image_path), ''),
+        NULLIF(TRIM(thumbnail_path), ''),
+        $scanRecordImageUrlSelect,
         NULLIF(TRIM((
           SELECT p.image_url
           FROM tbl_photos p

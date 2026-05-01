@@ -264,17 +264,25 @@ class PiApi {
 
   Future<String> downloadImage(ScanItem item, String baseUrl, {PiQrEndpoints? endpoints}) async {
     final ep = endpoints ?? const PiQrEndpoints();
-    final fileName = item.imageUrl.split('/').last;
+    final raw = item.imageUrl.trim();
+    final parsed = Uri.tryParse(raw);
+    final pathFileName = (parsed != null && parsed.pathSegments.isNotEmpty)
+        ? parsed.pathSegments.last.trim()
+        : '';
+    final fallbackFileName = item.imageUrl.split('/').last.trim();
+    final fileName = pathFileName.isNotEmpty
+        ? pathFileName
+        : (fallbackFileName.isNotEmpty ? fallbackFileName : 'image_${item.id}.jpg');
+    final uniqueDestName = 'scan_${item.id}_$fileName';
 
     // Prefer an explicit URL if the API returns one.
-    final raw = item.imageUrl.trim();
     final Uri? direct = Uri.tryParse(raw);
     final String path;
     if (direct != null && direct.hasScheme) {
       // Downloading from an absolute URL: use it directly.
       final uri = direct;
       final directory = await getApplicationDocumentsDirectory();
-      final destName = fileName.isNotEmpty ? fileName : 'image_${item.id}.jpg';
+      final destName = uniqueDestName;
       final destPath = '${directory.path}/$destName';
 
       final client = http.Client();
@@ -294,10 +302,10 @@ class PiApi {
     } else if (raw.startsWith('/')) {
       path = raw;
     } else {
-      path = ep.resolveImagePath(fileName);
+      path = ep.resolveImagePath(fileName, scanId: item.id);
     }
 
-    final destName = fileName.isNotEmpty ? fileName : 'image_${item.id}.jpg';
+    final destName = uniqueDestName;
     return downloadFile(
       baseUrl: baseUrl,
       path: path,

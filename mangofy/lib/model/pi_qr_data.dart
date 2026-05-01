@@ -74,6 +74,10 @@ class PiQrEndpoints {
 
     if (path.contains('<id>')) path = path.replaceAll('<id>', '{id}');
     if (path.contains(':id')) path = path.replaceAll(':id', '{id}');
+    // Some Pi QR payloads include a concrete scan id in URL-like templates
+    // (for example /api/scan/42/image/). Convert that segment into {id}
+    // so image/download endpoints resolve per scan record.
+    path = path.replaceAllMapped(RegExp(r'/scan/(\d+)/'), (_) => '/scan/{id}/');
 
     if (!path.contains('{filename}')) {
       if (path.endsWith('/')) {
@@ -104,7 +108,7 @@ class PiQrEndpoints {
     ) ??
     '/api/db/download';
 
-    final scanBundlePathTemplate = _normalizeTemplate(
+    final scanBundlePathTemplate = _normalizePathOrUrl(
       _readString(endpointsObj, const ['scanBundlePathTemplate', 'scan_bundle_path_template', 'scan_bundle_template', 'scan_bundle', 'scanBundleUrl', 'scan_bundle_url']),
     ) ??
     '/api/scan/{id}/bundle';
@@ -115,16 +119,16 @@ class PiQrEndpoints {
     '/api/images/bulk-zip';
 
     final scansAllPath = _normalizePathOnly(
-          _readString(endpointsObj, const ['scansAllPath', 'scans_all_path', 'scan_all_path']),
+          _readString(endpointsObj, const ['scansAllPath', 'scans_all_path', 'scan_all_path', 'scan_all_url']),
         ) ??
         '/api/scan/all';
 
-    final scansSincePathTemplate = _normalizeTemplate(
-          _readString(endpointsObj, const ['scansSincePathTemplate', 'scans_since_path_template', 'scan_since_template']),
+    final scansSincePathTemplate = _normalizePathOrUrl(
+          _readString(endpointsObj, const ['scansSincePathTemplate', 'scans_since_path_template', 'scan_since_template', 'scan_since_url_template']),
         ) ??
         '/api/scan/since/{timestamp}';
 
-    final scanByIdPathTemplate = _normalizeTemplate(
+    final scanByIdPathTemplate = _normalizePathOrUrl(
           _readString(endpointsObj, const ['scanByIdPathTemplate', 'scan_by_id_path_template', 'scan_path_template']),
         ) ??
         '/api/scan/{id}';

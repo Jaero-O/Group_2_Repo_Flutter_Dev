@@ -65,11 +65,15 @@ class _DatasetPageState extends State<DatasetPage> {
       folderName,
     );
 
+    if (!mounted) return;
+
     if (action == FolderAction.rename) {
       final newName = await DatasetDialogs.showRenameFolderDialog(
         context,
         folderName,
       );
+
+      if (!mounted) return;
 
       if (newName != null && newName.isNotEmpty && newName != folderName) {
         await LocalDb.instance.updateDatasetFolderName(
@@ -77,6 +81,7 @@ class _DatasetPageState extends State<DatasetPage> {
           newName,
         );
         _loadFolders(); // Reload to update UI
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Folder renamed to $newName')),
         );
@@ -88,9 +93,12 @@ class _DatasetPageState extends State<DatasetPage> {
         folderName
       );
 
+      if (!mounted) return;
+
       if (confirmDelete) {
         await LocalDb.instance.deleteDatasetFolder(folderName);
         _loadFolders(); // Reload to update UI
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Folder "$folderName" deleted.')),
         );

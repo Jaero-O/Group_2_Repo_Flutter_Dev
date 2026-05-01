@@ -2,11 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../model/notification_item.dart';
+import '../../services/local_db.dart';
 
-class NotificationsPage extends StatelessWidget {
-  final List<NotificationItem> notifications;
+class NotificationsPage extends StatefulWidget {
+  const NotificationsPage({super.key});
 
-  const NotificationsPage({super.key, required this.notifications});
+  @override
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<NotificationsPage> {
+  late Future<List<NotificationItem>> _notificationsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationsFuture = _loadNotifications();
+  }
+
+  Future<List<NotificationItem>> _loadNotifications() async {
+    return await LocalDb.instance.getNotifications(includeRead: true);
+  }
+
+  Future<void> _markAllRead() async {
+    await LocalDb.instance.markAllNotificationsRead();
+    if (!mounted) return;
+    setState(() {
+      _notificationsFuture = _loadNotifications();
+    });
+  }
 
   ({Color bgColor, Color iconColor, IconData icon}) _styleFor(
     NotificationType type,
@@ -51,34 +75,66 @@ class NotificationsPage extends StatelessWidget {
           icon: const Icon(Icons.arrow_back, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          FutureBuilder<List<NotificationItem>>(
+            future: _notificationsFuture,
+            builder: (context, snapshot) {
+              final notifications = snapshot.data ?? const <NotificationItem>[];
+              final hasUnread = notifications.any((item) => !item.isRead);
+              if (!hasUnread) return const SizedBox.shrink();
+              return TextButton(
+                onPressed: _markAllRead,
+                child: Text(
+                  'Mark all read',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF2E7D32),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
-      body: notifications.isEmpty
-          ? Center(
+      body: FutureBuilder<List<NotificationItem>>(
+        future: _notificationsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final notifications = snapshot.data ?? const <NotificationItem>[];
+          if (notifications.isEmpty) {
+            return Center(
               child: Text(
-                'No alerts - your crop is healthy!',
+                'No notifications yet.',
                 style: GoogleFonts.inter(
                   color: Colors.black54,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: notifications.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final item = notifications[index];
-                final style = _styleFor(item.type);
+            );
+          }
 
-                return Container(
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: notifications.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final item = notifications[index];
+              final style = _styleFor(item.type);
+
+              return Opacity(
+                opacity: item.isRead ? 0.82 : 1.0,
+                child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withValues(alpha: 0.03),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -87,9 +143,27 @@ class NotificationsPage extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        backgroundColor: style.bgColor,
-                        child: Icon(style.icon, color: style.iconColor),
+                      Stack(
+                        alignment: Alignment.topRight,
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: style.bgColor,
+                            child: Icon(style.icon, color: style.iconColor),
+                          ),
+                          if (!item.isRead)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFC62828),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -124,9 +198,12 @@ class NotificationsPage extends StatelessWidget {
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

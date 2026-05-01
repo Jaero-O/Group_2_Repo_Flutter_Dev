@@ -142,25 +142,6 @@ class _AnthracnoseRiskForecastCardState
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE0F2F1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Anthracnose model',
-                          style: TextStyle(
-                            color: Color(0xFF00695C),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
                           color: data.weather == null
                               ? const Color(0xFFFFF3E0)
                               : const Color(0xFFE8F5E9),
@@ -227,13 +208,6 @@ class _AnthracnoseRiskForecastCardState
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-                  _StageBar(
-                    healthy: data.healthy,
-                    early: data.early,
-                    advanced: data.advanced,
-                    total: data.total,
                   ),
                   const SizedBox(height: 16),
                   const Divider(height: 1),
@@ -432,76 +406,6 @@ class _MetricTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _StageBar extends StatelessWidget {
-  final int healthy;
-  final int early;
-  final int advanced;
-  final int total;
-
-  const _StageBar({
-    required this.healthy,
-    required this.early,
-    required this.advanced,
-    required this.total,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (total <= 0) {
-      return const Text(
-        'No anthracnose records yet.',
-        style: TextStyle(fontSize: 12, color: Colors.black45),
-      );
-    }
-
-    final healthyFlex = healthy <= 0 ? 1 : healthy;
-    final earlyFlex = early <= 0 ? 1 : early;
-    final advancedFlex = advanced <= 0 ? 1 : advanced;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Stage mix (scan history)',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            height: 10,
-            child: Row(
-              children: [
-                Expanded(
-                  flex: healthyFlex,
-                  child: const ColoredBox(color: Color(0xFF2E7D32)),
-                ),
-                Expanded(
-                  flex: earlyFlex,
-                  child: const ColoredBox(color: Color(0xFFF9A825)),
-                ),
-                Expanded(
-                  flex: advancedFlex,
-                  child: const ColoredBox(color: Color(0xFFC62828)),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Healthy: $healthy   Early: $early   Advanced: $advanced',
-          style: const TextStyle(fontSize: 12, color: Colors.black54),
-        ),
-      ],
     );
   }
 }

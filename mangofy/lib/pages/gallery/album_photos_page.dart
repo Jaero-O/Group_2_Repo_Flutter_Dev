@@ -309,7 +309,7 @@ class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay> with S
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withOpacity(0.1), // Dim background slightly
+      color: Colors.black.withValues(alpha: 0.1), // Dim background slightly
       child: Center(
         child: FadeTransition(
           opacity: _fadeAnimation,
@@ -322,7 +322,7 @@ class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay> with S
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 20,
                     spreadRadius: 5,
                   )

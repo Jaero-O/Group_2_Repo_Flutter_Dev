@@ -24,7 +24,7 @@ class GalleryDialogs {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: null, 
-          content: Container(
+          content: SizedBox(
             width: MediaQuery.of(parentContext).size.width,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -152,7 +152,7 @@ class GalleryDialogs {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: null, 
-          content: Container(
+          content: SizedBox(
             width: MediaQuery.of(context).size.width,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -189,7 +189,7 @@ class GalleryDialogs {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: const Color(0xFF4CAF50), width: 2.5),
+                      borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 2.5),
                     ),
                   ),
                 ),
@@ -252,7 +252,7 @@ class GalleryDialogs {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           title: null, 
-          content: Container(
+          content: SizedBox(
             width: MediaQuery.of(context).size.width,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -289,7 +289,7 @@ class GalleryDialogs {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: const Color(0xFF4CAF50), width: 2.5),
+                      borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 2.5),
                     ),
                   ),
                 ),
@@ -351,7 +351,7 @@ class GalleryDialogs {
           backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-          content: Container(
+          content: SizedBox(
             width: MediaQuery.of(context).size.width, 
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -430,6 +430,8 @@ class GalleryDialogs {
         builder: (context) => const GalleryPage(isSelectionMode: true, initialMode: null),
       ),
     );
+
+    if (!activeContext.mounted) return;
 
     if (selectedImageIds != null && selectedImageIds.isNotEmpty) {
       onAlbumCreated(albumName, location, selectedImageIds);

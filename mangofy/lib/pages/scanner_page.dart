@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import '../services/local_db.dart';
 import '../services/qr_scanner_service.dart';
 import '../services/sync_service.dart';
 import '../model/pi_qr_data.dart';
@@ -139,14 +140,20 @@ class _ScannerPageState extends State<ScannerPage> {
 
       final diagnostics = SyncService.instance.diagnosticsNotifier.value;
       final importedScans = diagnostics?.scansFetched ?? 0;
+      final dbScansImported = diagnostics?.dbScansImported ?? 0;
+      final liveScansImported = diagnostics?.topUpScansFetched ?? diagnostics?.apiScansFetched ?? 0;
       final importedImages = diagnostics?.imagesDownloaded ?? 0;
       final failures = diagnostics?.failures ?? 0;
+      final totalScans = (await LocalDb.instance.getScanSummary()).totalScans;
 
       if (mounted) {
         await _showImportCompleteModal(
           scans: importedScans,
+          dbScans: dbScansImported,
+          liveScans: liveScansImported,
           images: importedImages,
           failures: failures,
+          totalScans: totalScans,
         );
         if (mounted && failures == 0) {
           Navigator.of(context).pop(true);
@@ -176,8 +183,11 @@ class _ScannerPageState extends State<ScannerPage> {
 
   Future<void> _showImportCompleteModal({
     required int scans,
+    required int dbScans,
+    required int liveScans,
     required int images,
     required int failures,
+    required int totalScans,
   }) async {
     if (!mounted) return;
 
@@ -195,8 +205,11 @@ class _ScannerPageState extends State<ScannerPage> {
           child: _ImportResultDialog(
             success: success,
             scans: scans,
+            dbScans: dbScans,
+            liveScans: liveScans,
             images: images,
             failures: failures,
+            totalScans: totalScans,
             statusText: statusText,
           ),
         );
@@ -494,15 +507,21 @@ class _QrGuidePainter extends CustomPainter {
 class _ImportResultDialog extends StatefulWidget {
   final bool success;
   final int scans;
+  final int dbScans;
+  final int liveScans;
   final int images;
   final int failures;
+  final int totalScans;
   final String statusText;
 
   const _ImportResultDialog({
     required this.success,
     required this.scans,
+    required this.dbScans,
+    required this.liveScans,
     required this.images,
     required this.failures,
+    required this.totalScans,
     required this.statusText,
   });
 
@@ -570,7 +589,12 @@ class _ImportResultDialogState extends State<_ImportResultDialog>
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
               ),
               const SizedBox(height: 12),
+              if (widget.dbScans > 0)
+                Text('DB scans imported: ${widget.dbScans}'),
+              if (widget.liveScans > 0)
+                Text('New scans synced: ${widget.liveScans}'),
               Text('Scans imported: ${widget.scans}'),
+              Text('Total scans in app: ${widget.totalScans}'),
               Text('Images downloaded: ${widget.images}'),
               if (widget.failures > 0) Text('Failed items: ${widget.failures}'),
               const SizedBox(height: 16),

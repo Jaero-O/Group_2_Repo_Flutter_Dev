@@ -331,7 +331,7 @@ class DatasetDialogs {
                   'Rename',
                   style: GoogleFonts.inter(fontWeight: FontWeight.w500),
                 ),
-                splashColor: Colors.green.withOpacity(0.1),
+                splashColor: Colors.green.withValues(alpha: 0.1),
                 onTap: () => Navigator.pop(sheetContext, FolderAction.rename),
               ),
 
@@ -353,7 +353,7 @@ class DatasetDialogs {
                   'Delete Dataset',
                   style: GoogleFonts.inter(color: Colors.red, fontWeight: FontWeight.w500),
                 ),
-                splashColor: Colors.red.withOpacity(0.1),
+                splashColor: Colors.red.withValues(alpha: 0.1),
                 onTap: () => Navigator.pop(sheetContext, FolderAction.delete),
               ),
               const SizedBox(height: 12),
@@ -378,6 +378,8 @@ class DatasetDialogs {
         builder: (_) => GalleryPage(isSelectionMode: true, initialMode: initialMode),
       ),
     );
+
+    if (!parentContext.mounted) return;
 
     if (selected != null && selected.isNotEmpty) {
       final folderInput = await _showNameInputDialog(

@@ -62,13 +62,13 @@ class FullScreenPhotoView extends StatelessWidget {
               right: 0,
               child: Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black.withOpacity(0.8), Colors.transparent],
-                  ),
-                ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                      ),
+                    ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -213,9 +213,23 @@ class FullScreenPhotoView extends StatelessWidget {
     );
   }
 
+  String _normalizeLocalImagePath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.isAbsolute && uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return trimmed.replaceFirst('file://', '');
+      }
+    }
+    return trimmed;
+  }
+
   Widget _buildFullScreenImage() {
     final currentPhoto = photo!;
-    final imagePath = currentPhoto.path?.trim() ?? '';
+    final imagePath = _normalizeLocalImagePath(currentPhoto.path?.trim() ?? '');
     final imageUrl = currentPhoto.imageUrl?.trim() ?? '';
     final imageData = currentPhoto.data.trim();
 
@@ -585,12 +599,12 @@ class PhotoGridItem extends StatelessWidget {
                       horizontal: 6,
                       vertical: 2,
                     ),
-                    decoration: BoxDecoration(
+                        decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
                         colors: [
-                          Colors.black.withOpacity(0.7),
+                          Colors.black.withValues(alpha: 0.7),
                           Colors.transparent,
                         ],
                       ),

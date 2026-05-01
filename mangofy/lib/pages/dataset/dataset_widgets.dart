@@ -126,7 +126,7 @@ class FullScreenPhotoPage extends StatelessWidget {
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      Colors.black.withOpacity(0.85),
+                      Colors.black.withValues(alpha: 0.85),
                       Colors.transparent,
                     ],
                   ),
@@ -305,7 +305,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextButton(
-                        onPressed: () async {
+                          onPressed: () async {
                           Navigator.pop(dialogContext);
 
                           // Call DB service to remove the image
@@ -313,6 +313,8 @@ class _FolderViewPageState extends State<FolderViewPage> {
                             widget.folderName,
                             imageId,
                           );
+
+                          if (!context.mounted) return;
 
                           // Update the local state
                           setState(() {
@@ -480,7 +482,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
                                           begin: Alignment.bottomCenter,
                                           end: Alignment.topCenter,
                                           colors: [
-                                            Colors.black.withOpacity(0.7),
+                                            Colors.black.withValues(alpha: 0.7),
                                             Colors.transparent,
                                           ],
                                         ),

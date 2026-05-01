@@ -247,8 +247,8 @@ class _ActionLibraryPageState extends State<ActionLibraryPage> {
 
           final grouped = <String, List<ActionItem>>{};
           for (final action in actions) {
-            grouped.putIfAbsent(action.diseaseKeyword, () => <ActionItem>[])
-              ..add(action);
+            final list = grouped.putIfAbsent(action.diseaseKeyword, () => <ActionItem>[]);
+            list.add(action);
           }
 
           final keys = grouped.keys.toList()..sort();
@@ -501,7 +501,7 @@ class _ActionEditorDialogState extends State<_ActionEditorDialog> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _severity,
+                initialValue: _severity,
                 decoration: _inputDecoration(label: 'Severity trigger'),
                 items: widget.severityOptions
                     .map(
@@ -520,7 +520,7 @@ class _ActionEditorDialogState extends State<_ActionEditorDialog> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _trend,
+                initialValue: _trend,
                 decoration: _inputDecoration(label: 'Trend trigger'),
                 items: widget.trendOptions
                     .map(
@@ -539,7 +539,7 @@ class _ActionEditorDialogState extends State<_ActionEditorDialog> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<int>(
-                value: _iconCode,
+                initialValue: _iconCode,
                 decoration: _inputDecoration(label: 'Icon'),
                 items: widget.iconOptions
                     .map(

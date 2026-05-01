@@ -71,7 +71,7 @@ class PrimaryThreatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.07),
+            color: Colors.black.withValues(alpha: 0.07),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -121,7 +121,7 @@ class PrimaryThreatCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'diseased scans (all-time)',
+                    'diseased scans',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey[500],
@@ -257,11 +257,11 @@ class _TrendChartPainter extends CustomPainter {
 
     canvas.drawPath(
       fillPath,
-      Paint()
+        Paint()
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [color.withOpacity(0.25), color.withOpacity(0.05)],
+          colors: [color.withValues(alpha: 0.25), color.withValues(alpha: 0.05)],
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
         ..style = PaintingStyle.fill,
     );
@@ -269,7 +269,7 @@ class _TrendChartPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = color.withOpacity(0.7)
+        ..color = color.withValues(alpha: 0.7)
         ..strokeWidth = 2.0
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
@@ -277,7 +277,7 @@ class _TrendChartPainter extends CustomPainter {
     );
 
     for (final point in points) {
-      canvas.drawCircle(point, 3, Paint()..color = color.withOpacity(0.6));
+      canvas.drawCircle(point, 3, Paint()..color = color.withValues(alpha: 0.6));
     }
   }
 

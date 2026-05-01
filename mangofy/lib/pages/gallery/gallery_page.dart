@@ -547,8 +547,9 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   Widget _buildSelectedCountChip() {
-    if (!widget.isSelectionMode || selectedImages.isEmpty)
+    if (!widget.isSelectionMode || selectedImages.isEmpty) {
       return const SizedBox.shrink();
+    }
     return Positioned(
       top: 30,
       right: 25,

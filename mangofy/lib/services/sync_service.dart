@@ -10,6 +10,7 @@ import 'pi_api.dart';
 import 'pi_bundle_service.dart';
 import 'device_notification_service.dart';
 import 'package:flutter/foundation.dart';
+import '../model/notification_item.dart';
 
 class SyncProgress {
   final String stage;
@@ -29,6 +30,9 @@ class SyncProgress {
 
 class SyncDiagnostics {
   int scansFetched = 0;
+  int dbScansImported = 0;
+  int apiScansFetched = 0;
+  int topUpScansFetched = 0;
   int imagesAttempted = 0;
   int imagesDownloaded = 0;
   int photosInserted = 0;
@@ -41,6 +45,16 @@ class SyncService {
   static final SyncService instance = SyncService._();
 
   final ValueNotifier<DateTime?> lastSyncNotifier = ValueNotifier(null);
+  NotificationItem? get lastSyncNotificationItem {
+    final dt = lastSyncNotifier.value;
+    if (dt == null) return null;
+    return NotificationItem(
+      title: 'Sync completed',
+      body: 'Last successful sync at ${dt.toLocal().toString()}',
+      type: NotificationType.info,
+      timestamp: dt,
+    );
+  }
   final ValueNotifier<SyncProgress?> progressNotifier = ValueNotifier(null);
   final ValueNotifier<SyncDiagnostics?> diagnosticsNotifier = ValueNotifier(
     null,
@@ -86,14 +100,18 @@ class SyncService {
         rethrow;
       }
     }
+    final diagnostics = SyncDiagnostics();
+    diagnosticsNotifier.value = diagnostics;
+    diagnostics.apiScansFetched = scans.length;
+
     try {
       await _processScans(scans);
       final now = DateTime.now().toUtc();
       await _setLastSyncAt(now);
       lastSyncNotifier.value = now;
       await DeviceNotificationService.instance.notifySyncSummary(
-        importedScans: scans.length,
-        failures: diagnosticsNotifier.value?.failures ?? 0,
+        importedScans: diagnostics.scansFetched,
+        failures: diagnostics.failures,
       );
       await DeviceNotificationService.instance.notifyRiskIfHigh(
         sourceLabel: 'sync',
@@ -225,6 +243,10 @@ class SyncService {
         usedDbImportFallback = true;
         fetchSuccess = true;
 
+        final importedScanCount = await LocalDb.instance.getScanCount();
+        diagnostics.dbScansImported = importedScanCount;
+        diagnostics.scansFetched = importedScanCount;
+
         // Top-up from live API because Pi DB exports can be slightly stale.
         final latestImported = await LocalDb.instance.getLatestScanDate();
         final topUpSinceIso = latestImported == null
@@ -248,6 +270,7 @@ class SyncService {
           );
 
           if (recentScans.isNotEmpty) {
+            diagnostics.topUpScansFetched = recentScans.length;
             diagnostics.scansFetched += recentScans.length;
             await _processScans(
               recentScans,
@@ -277,7 +300,7 @@ class SyncService {
           );
         }
 
-        diagnostics.scansFetched = scans.length;
+        diagnostics.apiScansFetched = scans.length;
         await _processScans(scans, baseUrl: accessUrl, endpoints: endpoints);
         fetchSuccess = true;
       } catch (_) {
@@ -447,7 +470,8 @@ class SyncService {
         final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
         if (imageRef.isEmpty) return;
 
-        final existing = File(imagePath);
+        final normalizedImagePath = _normalizeLocalFilePath(imagePath);
+        final existing = File(normalizedImagePath);
         if (await existing.exists()) return;
 
         final fileName = _extractImageFileName(imageRef) ?? '';
@@ -500,7 +524,8 @@ class SyncService {
         final imageRef = imagePath.isNotEmpty ? imagePath : imageUrl;
         if (imageRef.isEmpty) return null;
 
-        final existing = File(imagePath);
+        final normalizedPath = _normalizeLocalFilePath(imagePath);
+        final existing = File(normalizedPath);
         if (await existing.exists()) return null;
 
         final fileName = _extractImageFileName(imageRef) ?? '';
@@ -592,7 +617,7 @@ class SyncService {
           try {
             final localPath = await PiApi.instance.downloadFile(
               baseUrl: baseUrl,
-              path: endpoints.resolveImagePath(remoteFileName),
+              path: endpoints.resolveImagePath(remoteFileName, scanId: scanId),
               fileName: localFileName,
               timeout: const Duration(seconds: 30),
             );
@@ -624,7 +649,11 @@ class SyncService {
     PiQrEndpoints? endpoints,
   }) async {
     final diagnostics = diagnosticsNotifier.value ?? SyncDiagnostics();
-    diagnostics.scansFetched = scans.length;
+    if (diagnostics.scansFetched == 0) {
+      diagnostics.scansFetched = scans.length;
+    } else {
+      diagnostics.scansFetched += scans.length;
+    }
     final scanCount = scans.length;
     final imageCount = scans.where((s) => s.imageUrl.isNotEmpty).length;
     final totalUnits = scanCount + imageCount;
@@ -698,14 +727,21 @@ class SyncService {
           diagnostics.imagesDownloaded++;
         }
 
-        final uniqueFileName = 'scan_${remote.id}_${basename(localPath)}';
+        final localBaseName = basename(localPath);
+        final uniqueFileName = localBaseName.startsWith('scan_${remote.id}_')
+            ? localBaseName
+            : 'scan_${remote.id}_$localBaseName';
         final fileName = preDownloadedPath == null
             ? uniqueFileName
-            : basename(localPath);
+            : localBaseName;
         final permanentPath = join(photosDir.path, fileName);
         String updatedImagePath = localPath;
         if (localPath != permanentPath) {
           try {
+            final target = File(permanentPath);
+            if (await target.exists()) {
+              await target.delete();
+            }
             await File(localPath).rename(permanentPath);
             updatedImagePath = permanentPath;
           } catch (_) {
@@ -805,8 +841,23 @@ class SyncService {
       if (last.isNotEmpty) return last;
     }
 
-    final fileName = basename(trimmed);
+    final fileName = basename(_normalizeLocalFilePath(trimmed));
     return fileName.isEmpty ? null : fileName;
+  }
+
+  String _normalizeLocalFilePath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return trimmed;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.isAbsolute && uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return trimmed.replaceFirst('file://', '');
+      }
+    }
+    return trimmed;
   }
 
   Future<Map<int, String>> _downloadBulkImagePaths({
