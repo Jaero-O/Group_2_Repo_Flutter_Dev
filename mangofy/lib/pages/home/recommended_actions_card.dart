@@ -144,6 +144,75 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
     return Color(0xFF000000 + value);
   }
 
+  IconData _resolveActionIcon(ActionItem item) {
+    final text = '${item.title} ${item.description}'.toLowerCase();
+
+    if (text.contains('spray') ||
+        text.contains('fungicide') ||
+        text.contains('treat')) {
+      return Icons.science_outlined;
+    }
+    if (text.contains('prune') ||
+        text.contains('trim') ||
+        text.contains('cut')) {
+      return Icons.content_cut;
+    }
+    if (text.contains('remove') ||
+        text.contains('discard') ||
+        text.contains('dispose') ||
+        text.contains('delete')) {
+      return Icons.delete_outline;
+    }
+    if (text.contains('clean') ||
+        text.contains('sanitize') ||
+        text.contains('disinfect') ||
+        text.contains('steril')) {
+      return Icons.cleaning_services_outlined;
+    }
+    if (text.contains('monitor') ||
+        text.contains('inspect') ||
+        text.contains('observe') ||
+        text.contains('check') ||
+        text.contains('scan')) {
+      return Icons.visibility_outlined;
+    }
+    if (text.contains('water') || text.contains('irrigat')) {
+      return Icons.water_drop_outlined;
+    }
+    if (text.contains('air') ||
+        text.contains('ventilat') ||
+        text.contains('canopy')) {
+      return Icons.air;
+    }
+    if (text.contains('soil') ||
+        text.contains('mulch') ||
+        text.contains('drain')) {
+      return Icons.grass_outlined;
+    }
+    if (text.contains('fertiliz') ||
+        text.contains('nutrient') ||
+        text.contains('feed')) {
+      return Icons.eco_outlined;
+    }
+    if (text.contains('protect') ||
+        text.contains('prevent') ||
+        text.contains('shield') ||
+        text.contains('cover')) {
+      return Icons.shield_outlined;
+    }
+    if (text.contains('record') ||
+        text.contains('log') ||
+        text.contains('document')) {
+      return Icons.event_note_outlined;
+    }
+
+    if (item.iconCode == Icons.directions_car.codePoint) {
+      return Icons.task_alt_outlined;
+    }
+
+    return IconData(item.iconCode, fontFamily: 'MaterialIcons');
+  }
+
   Future<void> _openActionLibrary() async {
     await Navigator.push(
       context,
@@ -216,7 +285,10 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                           const SizedBox(height: 4),
                           Text(
                             '$severityLabel • $trendLabel',
-                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
                           ),
                         ],
                       ),
@@ -234,13 +306,18 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                 if (actions.isEmpty)
                   const Text(
                     'No matching actions found for the current condition. Open the action library to add disease-specific steps.',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF777777), height: 1.4),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF777777),
+                      height: 1.4,
+                    ),
                   )
                 else
                   ...actions.asMap().entries.map((entry) {
                     final index = entry.key;
                     final item = entry.value;
                     final color = _colorFromHex(item.colorHex);
+                    final actionIcon = _resolveActionIcon(item);
 
                     return Column(
                       children: [
@@ -253,14 +330,7 @@ class _RecommendedActionsCardState extends State<RecommendedActionsCard> {
                                 color: color.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Icon(
-                                IconData(
-                                  item.iconCode,
-                                  fontFamily: 'MaterialIcons',
-                                ),
-                                color: color,
-                                size: 24,
-                              ),
+                              child: Icon(actionIcon, color: color, size: 24),
                             ),
                             const SizedBox(width: 14),
                             Expanded(

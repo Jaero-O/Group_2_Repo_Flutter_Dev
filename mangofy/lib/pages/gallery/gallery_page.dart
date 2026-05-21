@@ -95,6 +95,7 @@ class _GalleryPageState extends State<GalleryPage> {
     _isLoadingMore = false;
 
     try {
+      await LocalDb.instance.generateMyTreesFromTrees();
       final myTreesData = await LocalDb.instance.getAllMyTrees();
       final myTrees = myTreesData.map((map) => MyTree.fromMap(map)).toList();
 

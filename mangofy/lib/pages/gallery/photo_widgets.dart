@@ -2,202 +2,135 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../../model/photo.dart';
+import '../../model/scan_classification.dart';
 
-// Displays a single photo in full screen with a close button.
-class FullScreenPhotoView extends StatelessWidget {
-  // The photo to display (for actual photos from database)
+// Displays one or more photos in full screen with swipe navigation.
+class FullScreenPhotoView extends StatefulWidget {
   final Photo? photo;
-  // Fallback for placeholder images
   final String? imagePath;
+  final List<Photo>? photoList;
+  final int initialIndex;
 
-  const FullScreenPhotoView({super.key, this.photo, this.imagePath});
+  const FullScreenPhotoView({
+    super.key,
+    this.photo,
+    this.imagePath,
+    this.photoList,
+    this.initialIndex = 0,
+  });
+
+  @override
+  State<FullScreenPhotoView> createState() => _FullScreenPhotoViewState();
+}
+
+class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  List<Photo>? get _photos {
+    final list = widget.photoList;
+    if (list == null || list.isEmpty) return null;
+    return list;
+  }
+
+  bool get _isMultiPhoto => (_photos?.length ?? 0) > 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = _coerceIndex(widget.initialIndex);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  int _coerceIndex(int index) {
+    final list = _photos;
+    if (list == null || list.isEmpty) return 0;
+    if (index < 0) return 0;
+    if (index >= list.length) return list.length - 1;
+    return index;
+  }
+
+  Photo? get _currentPhoto {
+    final list = _photos;
+    if (list == null || list.isEmpty) return widget.photo;
+    return list[_coerceIndex(_currentIndex)];
+  }
+
+  bool _hasInfo(Photo photo) {
+    return (photo.disease?.isNotEmpty ?? false) ||
+        (photo.title?.isNotEmpty ?? false) ||
+        (photo.description?.isNotEmpty ?? false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentPhoto = _currentPhoto;
+    final photos = _photos;
+
     return Scaffold(
-      // Black background for a typical full-screen photo view
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Photo Display Area
-          Center(
-            child: photo != null
-                ? _buildFullScreenImage()
-                : Container(
-                    // Placeholder for albums or other cases
-                    decoration: BoxDecoration(
-                      color: Colors.grey[800],
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.all(50),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.photo,
-                          color: Colors.white70,
-                          size: 80,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Viewing: $imagePath',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-          ),
-
-          // Scan Information Panel (if available)
-          if (photo != null &&
-              (photo!.disease != null ||
-                  photo!.title != null ||
-                  photo!.description != null))
+          if (_isMultiPhoto && photos != null)
+            PageView.builder(
+              controller: _pageController,
+              itemCount: photos.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return Center(child: _buildPhotoImage(photos[index]));
+              },
+            )
+          else
+            Center(
+              child: currentPhoto != null
+                  ? _buildPhotoImage(currentPhoto)
+                  : _buildPlaceholder(),
+            ),
+          if (currentPhoto != null && _hasInfo(currentPhoto))
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(16),
+              child: _buildInfoPanel(currentPhoto),
+            ),
+          if (_isMultiPhoto && photos != null)
+            Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_currentIndex + 1} / ${photos.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (photo!.title != null && photo!.title!.isNotEmpty)
-                      Text(
-                        photo!.title!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    if (photo!.disease != null && photo!.disease!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.science,
-                              color: Colors.white70,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Disease: ${photo!.disease!}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (photo!.confidence != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.verified,
-                              color: Colors.white70,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Confidence: ${(photo!.confidence! * 100).round()}%',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (photo!.severityLabel != null &&
-                        photo!.severityLabel!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.local_offer_outlined,
-                              color: Colors.white70,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Classification: ${photo!.severityLabel!}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (photo!.severityValue != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.warning,
-                              color: Colors.white70,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Severity: ${photo!.severityValue!.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (photo!.description != null &&
-                        photo!.description!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          photo!.description!,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (photo!.timestamp.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Scanned: ${DateTime.tryParse(photo!.timestamp)?.toLocal().toString().split('.')[0] ?? photo!.timestamp}',
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),
-
-          // Close Button
           Positioned(
             top: 40,
             right: 16,
@@ -211,6 +144,203 @@ class FullScreenPhotoView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[800],
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(50),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.photo,
+            color: Colors.white70,
+            size: 80,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Viewing: ${widget.imagePath}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoPanel(Photo photo) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (photo.title != null && photo.title!.isNotEmpty)
+            Text(
+              photo.title!,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          if (photo.disease != null && photo.disease!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.science,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Disease: ${photo.disease!}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (photo.confidence != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.verified,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Confidence: ${(photo.confidence! * 100).round()}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (photo.severityLabel != null && photo.severityLabel!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.local_offer_outlined,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Classification: ${photo.severityLabel!}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (photo.severityValue != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.warning,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Severity: ${photo.severityValue!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (photo.description != null && photo.description!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                photo.description!,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          if (photo.timestamp.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Scanned: ${_formatTimestampLabel(photo.timestamp)}',
+                style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimestampLabel(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return raw;
+
+    final hasZone =
+        trimmed.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(trimmed);
+    final normalizedBase = trimmed.replaceFirst(' ', 'T');
+    final normalized = hasZone ? normalizedBase : '${normalizedBase}Z';
+    final parsed = DateTime.tryParse(normalized);
+    if (parsed != null) {
+      return parsed.toLocal().toString().split('.').first;
+    }
+
+    final m = RegExp(
+      r'^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?',
+    ).firstMatch(trimmed);
+    if (m == null) return raw;
+
+    final y = int.tryParse(m.group(1) ?? '');
+    final mo = int.tryParse(m.group(2) ?? '');
+    final d = int.tryParse(m.group(3) ?? '');
+    final h = int.tryParse(m.group(4) ?? '0');
+    final mi = int.tryParse(m.group(5) ?? '0');
+    final s = int.tryParse(m.group(6) ?? '0');
+    if (y == null || mo == null || d == null) return raw;
+
+    return DateTime.utc(y, mo, d, h ?? 0, mi ?? 0, s ?? 0)
+        .toLocal()
+        .toString()
+        .split('.')
+        .first;
   }
 
   String _normalizeLocalImagePath(String path) {
@@ -227,13 +357,13 @@ class FullScreenPhotoView extends StatelessWidget {
     return trimmed;
   }
 
-  Widget _buildFullScreenImage() {
-    final currentPhoto = photo!;
+  Widget _buildPhotoImage(Photo currentPhoto) {
     final imagePath = _normalizeLocalImagePath(currentPhoto.path?.trim() ?? '');
     final imageUrl = currentPhoto.imageUrl?.trim() ?? '';
     final imageData = currentPhoto.data.trim();
+    final useLocalPath = imagePath.isNotEmpty && !isPiLinuxPath(imagePath);
 
-    if (imagePath.isNotEmpty) {
+    if (useLocalPath) {
       final isRemotePath =
           imagePath.startsWith('http://') || imagePath.startsWith('https://');
       if (isRemotePath) {
@@ -518,6 +648,7 @@ class PhotoGridItem extends StatelessWidget {
 
       if (imagePath != null && imagePath.isNotEmpty) {
         final normalizedPath = imagePath.trim();
+        final useLocalPath = !isPiLinuxPath(normalizedPath);
         final isRemotePath =
             normalizedPath.startsWith('http://') ||
             normalizedPath.startsWith('https://');
@@ -526,24 +657,21 @@ class PhotoGridItem extends StatelessWidget {
           imageWidget = Image.network(
             normalizedPath,
             fit: BoxFit.cover,
-            cacheWidth: 200,
-            cacheHeight: 200,
+            cacheWidth: 400,
             errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.image_not_supported, color: Colors.grey),
           );
-        } else {
+        } else if (useLocalPath) {
           imageWidget = Image.file(
             File(normalizedPath),
             fit: BoxFit.cover,
-            cacheWidth: 200,
-            cacheHeight: 200,
+            cacheWidth: 400,
             errorBuilder: (context, error, stackTrace) {
               if (imageUrl != null && imageUrl.isNotEmpty) {
                 return Image.network(
                   imageUrl,
                   fit: BoxFit.cover,
-                  cacheWidth: 200,
-                  cacheHeight: 200,
+                  cacheWidth: 400,
                   errorBuilder: (_, __, ___) =>
                       const Icon(Icons.image_not_supported, color: Colors.grey),
                 );
@@ -551,13 +679,22 @@ class PhotoGridItem extends StatelessWidget {
               return const Icon(Icons.image_not_supported, color: Colors.grey);
             },
           );
+        } else if (imageUrl != null && imageUrl.isNotEmpty) {
+          imageWidget = Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            cacheWidth: 400,
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.image_not_supported, color: Colors.grey),
+          );
+        } else {
+          imageWidget = const Icon(Icons.image_not_supported, color: Colors.grey);
         }
       } else if (imageUrl != null && imageUrl.isNotEmpty) {
         imageWidget = Image.network(
           imageUrl,
           fit: BoxFit.cover,
-          cacheWidth: 200,
-          cacheHeight: 200,
+          cacheWidth: 400,
           errorBuilder: (context, error, stackTrace) =>
               const Icon(Icons.image_not_supported, color: Colors.grey),
         );
@@ -568,8 +705,7 @@ class PhotoGridItem extends StatelessWidget {
           imageWidget = Image.memory(
             bytes,
             fit: BoxFit.cover,
-            cacheWidth: 200,
-            cacheHeight: 200,
+            cacheWidth: 400,
           );
         } catch (e) {
           // Fallback if base64 decode fails

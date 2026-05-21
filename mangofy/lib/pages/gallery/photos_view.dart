@@ -23,9 +23,12 @@ class PhotoGridContent extends StatelessWidget {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
 
-    final parsed =
-        DateTime.tryParse(trimmed) ??
-        DateTime.tryParse(trimmed.replaceFirst(' ', 'T'));
+    // Pi stores CURRENT_TIMESTAMP in UTC without timezone suffix.
+    final hasZone =
+        trimmed.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(trimmed);
+    final normalizedBase = trimmed.replaceFirst(' ', 'T');
+    final normalized = hasZone ? normalizedBase : '${normalizedBase}Z';
+    final parsed = DateTime.tryParse(normalized);
     if (parsed != null) return parsed.toLocal();
 
     final m = RegExp(
@@ -41,7 +44,29 @@ class PhotoGridContent extends StatelessWidget {
     final s = int.tryParse(m.group(6) ?? '0');
 
     if (y == null || mo == null || d == null) return null;
-    return DateTime(y, mo, d, h ?? 0, mi ?? 0, s ?? 0);
+    return DateTime.utc(y, mo, d, h ?? 0, mi ?? 0, s ?? 0).toLocal();
+  }
+
+  Photo _toPhoto(PhotoMetadata item) {
+    return Photo(
+      id: item.id,
+      name: item.name,
+      data: '',
+      timestamp: item.timestamp,
+      path: item.path,
+      title: item.title,
+      description: item.description,
+      imageUrl: item.imageUrl,
+      checksum: item.checksum,
+      source: item.source,
+      updatedAt: item.updatedAt,
+      disease: item.disease,
+      severityLabel: item.severityLabel,
+      confidence: item.confidence,
+      severityValue: item.severityValue,
+      photoId: item.photoId,
+      scanDir: item.scanDir,
+    );
   }
 
   int _comparePhotosByTimestampDesc(PhotoMetadata a, PhotoMetadata b) {
@@ -56,39 +81,41 @@ class PhotoGridContent extends StatelessWidget {
 
   void _openFullScreenView(
     BuildContext context,
-    String imagePath, [
+    String imagePath, {
     dynamic photo,
-  ]) {
+    List<PhotoMetadata>? allPhotos,
+    int index = 0,
+  }) {
     Photo? resolvedPhoto;
     if (photo is Photo) {
       resolvedPhoto = photo;
     } else if (photo is PhotoMetadata) {
-      resolvedPhoto = Photo(
-        id: photo.id,
-        name: photo.name,
-        data: '',
-        timestamp: photo.timestamp,
-        path: photo.path,
-        title: photo.title,
-        description: photo.description,
-        imageUrl: photo.imageUrl,
-        checksum: photo.checksum,
-        source: photo.source,
-        updatedAt: photo.updatedAt,
-        disease: photo.disease,
-        severityLabel: photo.severityLabel,
-        confidence: photo.confidence,
-        severityValue: photo.severityValue,
-        photoId: photo.photoId,
-        scanDir: photo.scanDir,
-      );
+      resolvedPhoto = _toPhoto(photo);
+    }
+
+    final photoList = allPhotos?.map(_toPhoto).toList();
+    int initialIndex = 0;
+    if (photoList != null && photoList.isNotEmpty) {
+      if (index < 0) {
+        initialIndex = 0;
+      } else if (index >= photoList.length) {
+        initialIndex = photoList.length - 1;
+      } else {
+        initialIndex = index;
+      }
+
+      resolvedPhoto ??= photoList[initialIndex];
     }
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            FullScreenPhotoView(imagePath: imagePath, photo: resolvedPhoto),
+        builder: (context) => FullScreenPhotoView(
+          imagePath: imagePath,
+          photo: resolvedPhoto,
+          photoList: photoList,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }
@@ -114,16 +141,18 @@ class PhotoGridContent extends StatelessWidget {
       return PhotoGrid(
         photos: List<dynamic>.from(sortedPhotos),
         crossAxisCount: 4,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
         padding: const EdgeInsets.all(4),
-        borderRadius: 4,
+        borderRadius: 8,
         isLoadingMore: isLoadingMore,
         onItemTap: (index) {
           _openFullScreenView(
             context,
             sortedPhotos[index].path ?? sortedPhotos[index].id.toString(),
-            sortedPhotos[index],
+            photo: sortedPhotos[index],
+            allPhotos: sortedPhotos,
+            index: index,
           );
         },
         onItemLongPress: (index) {
@@ -159,15 +188,17 @@ class PhotoGridContent extends StatelessWidget {
         return PhotoGrid(
           photos: List<dynamic>.from(sortedPhotos),
           crossAxisCount: 4,
-          crossAxisSpacing: 4,
-          mainAxisSpacing: 4,
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
           padding: const EdgeInsets.all(4),
-          borderRadius: 4,
+          borderRadius: 8,
           onItemTap: (index) {
             _openFullScreenView(
               context,
               sortedPhotos[index].path ?? sortedPhotos[index].id.toString(),
-              sortedPhotos[index],
+              photo: sortedPhotos[index],
+              allPhotos: sortedPhotos,
+              index: index,
             );
           },
           onItemLongPress: (index) {
@@ -203,16 +234,14 @@ class PhotoGridContent extends StatelessWidget {
         .where((x) => x.time != null)
         .toList();
     final undatedPhotos = photos
-      .where((p) => _parseTimestamp(p.timestamp) == null)
-      .toList();
+        .where((p) => _parseTimestamp(p.timestamp) == null)
+        .toList();
 
     // If timestamps are missing/unparseable, fall back to all-photos.
     if (datedPhotos.isEmpty) {
       if (undatedPhotos.isNotEmpty) {
         undatedPhotos.sort(_comparePhotosByTimestampDesc);
-        return [
-          _buildGroupedColumn(context, 'Undated', undatedPhotos),
-        ];
+        return [_buildGroupedColumn(context, 'Undated', undatedPhotos)];
       }
 
       return [
@@ -299,8 +328,7 @@ class PhotoGridContent extends StatelessWidget {
         final year = int.tryParse(parts[0]) ?? 0;
         final month = int.tryParse(parts[1]) ?? 1;
         final title = '${monthNames[month - 1]} $year';
-        final monthPhotos = grouped[key]!
-          ..sort(_comparePhotosByTimestampDesc);
+        final monthPhotos = grouped[key]!..sort(_comparePhotosByTimestampDesc);
         sections.add(_buildGroupedColumn(context, title, monthPhotos));
       }
       if (undatedPhotos.isNotEmpty) {
@@ -326,8 +354,7 @@ class PhotoGridContent extends StatelessWidget {
       final month = int.tryParse(parts[1]) ?? 1;
       final day = int.tryParse(parts[2]) ?? 1;
       final title = '${monthNames[month - 1]} $day, $year';
-      final dayPhotos = grouped[key]!
-        ..sort(_comparePhotosByTimestampDesc);
+      final dayPhotos = grouped[key]!..sort(_comparePhotosByTimestampDesc);
       sections.add(
         _buildGroupedColumn(context, title, dayPhotos, titleSize: 16),
       );
@@ -374,14 +401,16 @@ class PhotoGridContent extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 4,
-      crossAxisSpacing: 4,
-      mainAxisSpacing: 4,
+      crossAxisSpacing: 6,
+      mainAxisSpacing: 6,
       padding: EdgeInsets.zero,
       borderRadius: 8,
       onItemTap: (index) => _openFullScreenView(
         context,
         groupedPhotos[index].path ?? groupedPhotos[index].id.toString(),
-        groupedPhotos[index],
+        photo: groupedPhotos[index],
+        allPhotos: groupedPhotos,
+        index: index,
       ),
       onItemLongPress: (index) {
         final id = groupedPhotos[index].id;

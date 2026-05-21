@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'album_photos_page.dart';
@@ -125,10 +126,19 @@ class MyTreesPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       child: coverPhoto != null
                           ? PhotoGridItem(photo: coverPhoto, borderRadius: 0)
-                          : Image.asset(
-                              coverImage,
-                              fit: BoxFit.cover,
-                            ),
+                          : coverImage.startsWith('images/')
+                              ? Image.asset(
+                                  coverImage,
+                                  fit: BoxFit.cover,
+                                )
+                              : Image.file(
+                                  File(coverImage),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Image.asset(
+                                    'images/leaf.png',
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                     ),
                   ),
                 ),

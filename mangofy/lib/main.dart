@@ -8,6 +8,7 @@ import 'package:mangofy/pages/gallery/gallery_page.dart';
 import 'package:mangofy/pages/dataset/dataset_page.dart';
 import 'package:mangofy/pages/scanner_page.dart';
 import 'package:mangofy/services/device_notification_service.dart';
+import 'package:mangofy/services/sync_service.dart';
 
 import 'splash_screen.dart';
 
@@ -61,6 +62,8 @@ class _MyHomePageState extends State<MyHomePage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Retry startup auto-sync whenever the app returns to foreground.
+      unawaited(SyncService.instance.autoSyncIfReachable());
       return;
     }
 
@@ -170,7 +173,7 @@ class _MyHomePageState extends State<MyHomePage>
               child: Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
+                decoration:  BoxDecoration(
                   color: selectedColor,
                   shape: BoxShape.circle,
                   border: Border.all(color: Color(0xFFFAFAFA), width: 3), // Optional ring

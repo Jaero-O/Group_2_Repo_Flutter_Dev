@@ -227,15 +227,41 @@ class PiApi {
       return paginated;
     }
 
-    final uri = _makeUri(baseUrl, ep.scansAllPath);
-    final resp = await http.get(uri).timeout(const Duration(seconds: 60));
-    if (resp.statusCode != 200) {
-      throw Exception('Failed to fetch all scans from Pi at $baseUrl (HTTP ${resp.statusCode}). Check that the Pi is running and the scans endpoint (${ep.scansAllPath}) is correct.');
+    final candidatePaths = <String>{
+      ep.scansAllPath,
+      '/api/scans',
+      '/api/scan',
+    }.toList();
+
+    for (final path in candidatePaths) {
+      try {
+        final uri = _makeUri(baseUrl, path);
+        final resp = await http.get(uri).timeout(const Duration(seconds: 60));
+        if (resp.statusCode == 200) {
+          final decoded = jsonDecode(resp.body);
+          final arr = _extractScanMaps(decoded);
+          return arr.map(ScanItem.fromJson).toList();
+        }
+      } catch (_) {
+        // Try next candidate endpoint.
+      }
     }
 
-    final decoded = jsonDecode(resp.body);
-    final arr = _extractScanMaps(decoded);
-    return arr.map(ScanItem.fromJson).toList();
+    try {
+      return await getScansSince(
+        baseUrl,
+        '1970-01-01T00:00:00.000Z',
+        endpoints: endpoints,
+      );
+    } catch (_) {
+      // Fall through to informative error.
+    }
+
+    throw Exception(
+      'Failed to fetch all scans from Pi at $baseUrl. '
+      'Tried: ${candidatePaths.join(", ")} and since-epoch fallback. '
+      'Check that the Pi is running and a scans endpoint is available.',
+    );
   }
 
   Future<List<ScanItem>> getScansSince(String baseUrl, String timestamp, {PiQrEndpoints? endpoints}) async {

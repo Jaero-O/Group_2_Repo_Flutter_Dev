@@ -16,6 +16,7 @@ class LocalDb {
   static final LocalDb instance = LocalDb._();
   static const String _legacyDataMigrationFlag =
       'legacy_local_db_data_migrated_v1';
+  static const String _syntheticImportedTreeName = 'Imported Tree';
 
   Database? _db;
 
@@ -344,6 +345,36 @@ class LocalDb {
           await _repairScanDiseaseForeignKeys(db);
           await _repairLegacyDatasetFolderImageIds(db);
           await _refreshDefaultActionLibraryContent(db);
+        }
+      },
+      onOpen: (db) async {
+        // Keep imported Pi DBs compatible with app queries even when
+        // they were imported before this guard was introduced.
+        final treeColumns = await db.rawQuery('PRAGMA table_info(tbl_tree)');
+        final treeColumnNames = treeColumns
+            .map((row) => row['name'] as String)
+            .toSet();
+        if (!treeColumnNames.contains('location')) {
+          await db.execute('ALTER TABLE tbl_tree ADD COLUMN location TEXT');
+        }
+        if (!treeColumnNames.contains('variety')) {
+          await db.execute('ALTER TABLE tbl_tree ADD COLUMN variety TEXT');
+        }
+
+        final scanColumns = await db.rawQuery(
+          'PRAGMA table_info(tbl_scan_record)',
+        );
+        final scanColumnNames = scanColumns
+            .map((row) => row['name'] as String)
+            .toSet();
+        if (scanColumnNames.contains('severity_pct')) {
+          await db.execute('''
+            UPDATE tbl_scan_record
+            SET severity_percentage = severity_pct
+            WHERE (severity_percentage IS NULL OR severity_percentage = 0)
+              AND severity_pct IS NOT NULL
+              AND severity_pct > 0
+          ''');
         }
       },
     );
@@ -1062,6 +1093,18 @@ class LocalDb {
           );
         }
 
+        // Ensure tbl_tree has all columns the app queries. Pi DBs from older
+        // firmware may lack 'location' and/or 'variety'. Without these the
+        // SELECT in getAllScans/getScansPage throws at parse time and the scan
+        // list can fail to load.
+        final treeColumnNames = await getTableColumns('tbl_tree');
+        if (!treeColumnNames.contains('location')) {
+          await db.execute('ALTER TABLE tbl_tree ADD COLUMN location TEXT');
+        }
+        if (!treeColumnNames.contains('variety')) {
+          await db.execute('ALTER TABLE tbl_tree ADD COLUMN variety TEXT');
+        }
+
         // App-side compatibility column used by queries and indexes.
         if (!scanColumnNames.contains('is_archived')) {
           await db.execute(
@@ -1071,6 +1114,19 @@ class LocalDb {
         await db.execute(
           'UPDATE tbl_scan_record SET is_archived = 0 WHERE is_archived IS NULL',
         );
+
+        // Pi exports may carry severity in severity_pct while
+        // severity_percentage is zero/null. Backfill non-zero values so
+        // downstream severity bucketing stays accurate.
+        if (scanColumnNames.contains('severity_pct')) {
+          await db.execute('''
+            UPDATE tbl_scan_record
+            SET severity_percentage = severity_pct
+            WHERE (severity_percentage IS NULL OR severity_percentage = 0)
+              AND severity_pct IS NOT NULL
+              AND severity_pct > 0
+          ''');
+        }
 
         // Ensure import/read-path indexes exist in imported DBs.
         await db.execute(
@@ -1123,6 +1179,8 @@ class LocalDb {
         await _repairScanDiseaseForeignKeys(db);
         await _repairLegacyDatasetFolderImageIds(db);
         await _refreshDefaultActionLibraryContent(db);
+        await _cleanupSyntheticImportedTreeData(db);
+        await _ensureTreeReferences(db);
         // Stamp the app schema version so _initDb() skips onCreate/onUpgrade
         // when it next opens this imported DB.
         await db.execute('PRAGMA user_version = 8');
@@ -1139,6 +1197,7 @@ class LocalDb {
     }
 
     await generateDatasetsFromTrees();
+    await generateMyTreesFromTrees();
   }
 
   Future<void> close() async {
@@ -1154,16 +1213,11 @@ class LocalDb {
   }
 
   String _resolvedSeverityName(ScanItem item) {
-    final normalized = normalizeSeverityLabel(item.severityLevelName);
-    if (!isAnthracnoseScan(item)) {
-      return 'Not Applicable';
+    final level = item.severityLevelName.trim();
+    if (level.isNotEmpty && level.toLowerCase() != 'none') {
+      return level;
     }
-
-    if (normalized.isNotEmpty) {
-      return normalized;
-    }
-
-    return statusForScan(item, anthracnoseOnly: false);
+    return '';
   }
 
   Future<void> upsertScan(ScanItem item) async {
@@ -1287,7 +1341,6 @@ class LocalDb {
                 WHEN TRIM(r.image_path) LIKE '/data/%'
                   OR TRIM(r.image_path) LIKE '/storage/%'
                   OR TRIM(r.image_path) LIKE 'file:///%'
-                  OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.image_path), '')
                 ELSE NULL
               END,
@@ -1295,7 +1348,6 @@ class LocalDb {
                 WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
                   OR TRIM(r.thumbnail_path) LIKE '/storage/%'
                   OR TRIM(r.thumbnail_path) LIKE 'file:///%'
-                  OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.thumbnail_path), '')
                 ELSE NULL
               END,
@@ -1308,6 +1360,13 @@ class LocalDb {
                 )
                   AND p.path IS NOT NULL
                   AND TRIM(p.path) != ''
+                  AND TRIM(p.path) NOT LIKE 'http://%'
+                  AND TRIM(p.path) NOT LIKE 'https://%'
+                  AND (
+                    TRIM(p.path) LIKE '/data/%'
+                    OR TRIM(p.path) LIKE '/storage/%'
+                    OR TRIM(p.path) LIKE 'file:///%'
+                  )
                 ORDER BY p.id DESC
                 LIMIT 1
               )), '')
@@ -1326,7 +1385,22 @@ class LocalDb {
                 LIMIT 1
               )), ''),
               ''
-            ) as resolved_image_url
+            ) as resolved_image_url,
+            COALESCE(
+              NULLIF(TRIM((
+                SELECT p.scan_dir
+                FROM tbl_photos p
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
+                  AND p.scan_dir IS NOT NULL
+                  AND TRIM(p.scan_dir) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), ''),
+              ''
+            ) as resolved_scan_dir
       FROM tbl_scan_record r
       LEFT JOIN tbl_tree t ON r.tree_id = t.id
       LEFT JOIN tbl_disease d ON r.disease_id = d.id
@@ -1361,7 +1435,6 @@ class LocalDb {
                 WHEN TRIM(r.image_path) LIKE '/data/%'
                   OR TRIM(r.image_path) LIKE '/storage/%'
                   OR TRIM(r.image_path) LIKE 'file:///%'
-                  OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.image_path), '')
                 ELSE NULL
               END,
@@ -1369,7 +1442,6 @@ class LocalDb {
                 WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
                   OR TRIM(r.thumbnail_path) LIKE '/storage/%'
                   OR TRIM(r.thumbnail_path) LIKE 'file:///%'
-                  OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
                   THEN NULLIF(TRIM(r.thumbnail_path), '')
                 ELSE NULL
               END,
@@ -1382,6 +1454,13 @@ class LocalDb {
                 )
                   AND p.path IS NOT NULL
                   AND TRIM(p.path) != ''
+                  AND TRIM(p.path) NOT LIKE 'http://%'
+                  AND TRIM(p.path) NOT LIKE 'https://%'
+                  AND (
+                    TRIM(p.path) LIKE '/data/%'
+                    OR TRIM(p.path) LIKE '/storage/%'
+                    OR TRIM(p.path) LIKE 'file:///%'
+                  )
                 ORDER BY p.id DESC
                 LIMIT 1
               )), '')
@@ -1400,7 +1479,22 @@ class LocalDb {
                 LIMIT 1
               )), ''),
               ''
-            ) as resolved_image_url
+            ) as resolved_image_url,
+            COALESCE(
+              NULLIF(TRIM((
+                SELECT p.scan_dir
+                FROM tbl_photos p
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
+                  AND p.scan_dir IS NOT NULL
+                  AND TRIM(p.scan_dir) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), ''),
+              ''
+            ) as resolved_scan_dir
       FROM tbl_scan_record r
       LEFT JOIN tbl_tree t ON r.tree_id = t.id
       LEFT JOIN tbl_disease d ON r.disease_id = d.id
@@ -1433,7 +1527,7 @@ class LocalDb {
       confidence: (row['confidence_score'] as num?)?.toDouble() ?? 0.0,
       severityValue: (row['severity_percentage'] as num?)?.toDouble() ?? 0.0,
       photoId: null,
-      scanDir: '',
+      scanDir: row['resolved_scan_dir'] as String? ?? '',
       treeId: row['tree_id'] as int?,
       treeName: row['tree_name'] as String? ?? '',
       treeLocation: row['tree_location'] as String? ?? '',
@@ -1610,7 +1704,87 @@ class LocalDb {
           'is_archived': 0,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
+
+      await _cleanupSyntheticImportedTreeData(txn);
+      await _ensureTreeReferences(txn);
     });
+  }
+
+  Future<void> _ensureTreeReferences(DatabaseExecutor db) async {
+    final missingTreeIds = await db.rawQuery('''
+      SELECT DISTINCT r.tree_id AS missing_tree_id
+      FROM tbl_scan_record r
+      LEFT JOIN tbl_tree t ON t.id = r.tree_id
+      WHERE r.tree_id IS NOT NULL
+        AND t.id IS NULL
+      ORDER BY r.tree_id ASC
+    ''');
+
+    for (final row in missingTreeIds) {
+      final raw = row['missing_tree_id'];
+      final treeId = raw is int ? raw : int.tryParse(raw?.toString() ?? '');
+      if (treeId == null) continue;
+
+      final candidateNames = <String>[
+        'Tree $treeId',
+        'Imported Tree $treeId',
+        'Imported Tree #$treeId',
+      ];
+
+      for (final candidate in candidateNames) {
+        await db.insert('tbl_tree', {
+          'id': treeId,
+          'name': candidate,
+          'location': '',
+          'variety': '',
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+
+        final exists = await db.query(
+          'tbl_tree',
+          columns: ['id'],
+          where: 'id = ?',
+          whereArgs: [treeId],
+          limit: 1,
+        );
+        if (exists.isNotEmpty) {
+          break;
+        }
+      }
+    }
+  }
+
+  Future<void> _cleanupSyntheticImportedTreeData(DatabaseExecutor db) async {
+    final importedTreeRows = await db.query(
+      'tbl_tree',
+      columns: ['id'],
+      where: 'TRIM(name) = ?',
+      whereArgs: [_syntheticImportedTreeName],
+    );
+
+    for (final row in importedTreeRows) {
+      final treeId = row['id'] as int?;
+      if (treeId == null) continue;
+
+      await db.update(
+        'tbl_scan_record',
+        {'tree_id': null},
+        where: 'tree_id = ?',
+        whereArgs: [treeId],
+      );
+
+      await db.delete('tbl_tree', where: 'id = ?', whereArgs: [treeId]);
+    }
+
+    await db.delete(
+      'tbl_my_trees',
+      where: 'TRIM(title) = ?',
+      whereArgs: [_syntheticImportedTreeName],
+    );
+    await db.delete(
+      'tbl_dataset_folders',
+      where: 'TRIM(name) = ?',
+      whereArgs: [_syntheticImportedTreeName],
+    );
   }
 
   Future<ScanSummary> getScanSummary({int? treeId}) async {
@@ -1634,15 +1808,14 @@ class LocalDb {
       buckets AS (
         SELECT
           CASE
+            WHEN disease_text = 'healthy' OR severity_text LIKE '%healthy%' THEN 'healthy'
             WHEN disease_text NOT LIKE '%anthracnose%' THEN 'not_applicable'
-            WHEN severity_text LIKE '%healthy%' OR disease_text = 'healthy' THEN 'healthy'
             WHEN severity_text = 'high' THEN 'advanced'
             WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
             WHEN severity_text IN ('low', 'trace') THEN 'early'
             WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
-            WHEN severity_pct > 40.0 THEN 'advanced'
-            WHEN severity_pct > 5.0 THEN 'early'
-            WHEN disease_text != '' AND disease_text != 'healthy' THEN 'early'
+            WHEN severity_pct > 12.0 THEN 'advanced'
+            WHEN severity_pct >= 0.1 THEN 'early'
             ELSE 'healthy'
           END AS bucket
         FROM normalized
@@ -1685,6 +1858,8 @@ class LocalDb {
         diseaseKeyword: 'anthracnose',
         treeId: treeId,
       ),
+      getAnthracnoseWeeklyStageSeries(treeId: treeId),
+      getAnthracnosePerTreeImageSeries(treeId: treeId),
       getPrimaryDiseaseName(treeId: treeId),
       getLatestScanDate(treeId: treeId),
       getScanRowCompleteness(),
@@ -1695,9 +1870,11 @@ class LocalDb {
       diseaseDistributionRows: results[1] as List<Map<String, dynamic>>,
       anthracnoseStageSummary: results[2] as Map<String, int>,
       anthracnoseTrendSeries: results[3] as List<Map<String, dynamic>>,
-      primaryDisease: results[4] as String,
-      latestScanDate: results[5] as String?,
-      rowCompleteness: results[6] as Map<String, int>,
+      anthracnoseWeeklyStageSeries: results[4] as List<Map<String, dynamic>>,
+      anthracnosePerTreeImageSeries: results[5] as List<Map<String, dynamic>>,
+      primaryDisease: results[6] as String,
+      latestScanDate: results[7] as String?,
+      rowCompleteness: results[8] as Map<String, int>,
     );
   }
 
@@ -1754,7 +1931,7 @@ class LocalDb {
       weekStart = jan1;
     } else {
       final firstMonday = jan1.add(Duration(days: firstMondayOffset));
-      weekStart = firstMonday.add(Duration(days: (week - 1) * 7));
+      weekStart = firstMonday.add(Duration(days: week * 7));
     }
     const monthNames = [
       'Jan',
@@ -1770,7 +1947,8 @@ class LocalDb {
       'Nov',
       'Dec',
     ];
-    return '${monthNames[weekStart.month - 1]} ${weekStart.day}';
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    return '${monthNames[weekEnd.month - 1]} ${weekEnd.day}';
   }
 
   Future<String?> getLatestScanDate({int? treeId}) async {
@@ -1869,8 +2047,8 @@ class LocalDb {
             WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
             WHEN severity_text IN ('low', 'trace') THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
             WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
-            WHEN severity_pct > 40.0 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
-            WHEN severity_pct > 5.0 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_pct > 12.0 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
+            WHEN severity_pct >= 0.1 THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
             WHEN disease_text != '' AND disease_text != 'healthy' THEN COALESCE(NULLIF(disease_name, ''), 'Unknown')
             ELSE 'Healthy'
           END AS disease
@@ -1969,8 +2147,8 @@ class LocalDb {
             WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
             WHEN severity_text IN ('low', 'trace') THEN 'early'
             WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
-            WHEN severity_pct > 40.0 THEN 'advanced'
-            WHEN severity_pct > 5.0 THEN 'early'
+            WHEN severity_pct > 12.0 THEN 'advanced'
+            WHEN severity_pct >= 0.1 THEN 'early'
             ELSE 'healthy'
           END AS severity_bucket
         FROM anthracnose_only
@@ -1999,6 +2177,71 @@ class LocalDb {
       'early': toIntValue(row['early_count']),
       'advanced': toIntValue(row['advanced_count']),
       'total': toIntValue(row['total_count']),
+    };
+  }
+
+  Future<Map<String, double>> getAnthracnoseSeverityAverages({
+    int? treeId,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = $treeId' : '';
+    final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease_text,
+          LOWER(TRIM(COALESCE(NULLIF(s.name, ''), NULLIF(r.severity_level, ''), ''))) AS severity_text,
+          COALESCE(r.severity_percentage, 0) AS severity_pct
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+        WHERE 1=1 $treeFilter
+      ),
+      anthracnose_only AS (
+        SELECT *
+        FROM normalized
+        WHERE disease_text LIKE '%anthracnose%'
+      ),
+      bucketed AS (
+        SELECT
+          CASE
+            WHEN severity_text LIKE '%healthy%' THEN 'healthy'
+            WHEN severity_text = 'high' THEN 'advanced'
+            WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
+            WHEN severity_text IN ('low', 'trace') THEN 'early'
+            WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
+            WHEN severity_pct > 12.0 THEN 'advanced'
+            WHEN severity_pct >= 0.1 THEN 'early'
+            ELSE 'healthy'
+          END AS severity_bucket,
+          severity_pct
+        FROM anthracnose_only
+      )
+      SELECT
+        AVG(CASE WHEN severity_bucket = 'early' THEN severity_pct END) AS avg_early_pct,
+        AVG(CASE WHEN severity_bucket = 'advanced' THEN severity_pct END) AS avg_advanced_pct,
+        AVG(severity_pct) AS avg_overall_pct
+      FROM bucketed
+    ''');
+
+    double toDoubleValue(Object? value) {
+      if (value is double) return value;
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0.0;
+    }
+
+    if (rows.isEmpty) {
+      return {'early': 0.0, 'advanced': 0.0, 'overall': 0.0};
+    }
+
+    final row = rows.first;
+    return {
+      'early': toDoubleValue(row['avg_early_pct']),
+      'advanced': toDoubleValue(row['avg_advanced_pct']),
+      'overall': toDoubleValue(row['avg_overall_pct']),
     };
   }
 
@@ -2052,28 +2295,337 @@ class LocalDb {
     return series;
   }
 
-  Future<List<Map<String, dynamic>>> getSeverityTrendMonthOptions({
+  Future<List<Map<String, dynamic>>> getAnthracnoseWeeklyStageSeries({
     int? treeId,
+    int weekWindow = 11,
+    int? month,
+    int? year,
   }) async {
     final db = await database;
     final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+    final bool hasMonthFilter = month != null && year != null;
+    final String monthFilter = hasMonthFilter
+        ? "AND strftime('%Y', normalized_ts) = ? AND strftime('%m', normalized_ts) = ?"
+        : '';
+    final int effectiveWeekWindow = hasMonthFilter ? 52 : weekWindow;
     final args = <Object?>[];
     if (treeId != null) args.add(treeId);
+    if (hasMonthFilter) {
+      args
+        ..add(year.toString())
+        ..add(month.toString().padLeft(2, '0'));
+    }
+    args.add(effectiveWeekWindow);
 
     final rows = await db.rawQuery('''
-      SELECT r.scan_timestamp, r.analysis_updated_at
-      FROM tbl_scan_record r
-      WHERE (
-          (r.scan_timestamp IS NOT NULL AND TRIM(r.scan_timestamp) != '')
-          OR (r.analysis_updated_at IS NOT NULL AND TRIM(r.analysis_updated_at) != '')
-        )
-        $treeFilter
+      WITH normalized AS (
+        SELECT
+          COALESCE(
+            datetime(replace(replace(substr((
+              SELECT p.timestamp
+              FROM tbl_photos p
+              WHERE (
+                p.photo_id = r.id OR
+                (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+              )
+                AND p.timestamp IS NOT NULL
+                AND TRIM(p.timestamp) != ''
+              ORDER BY p.id DESC
+              LIMIT 1
+            ), 1, 19), 'T', ' '), 'Z', '')),
+            datetime(replace(replace(substr(r.scan_timestamp, 1, 19), 'T', ' '), 'Z', ''))
+          ) AS normalized_ts,
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease_text,
+          LOWER(TRIM(COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), ''))) AS severity_text,
+          COALESCE(r.severity_percentage, 0) AS severity_pct
+        FROM tbl_scan_record r
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+        WHERE (
+            (r.scan_timestamp IS NOT NULL AND TRIM(r.scan_timestamp) != '')
+            OR EXISTS (
+              SELECT 1
+              FROM tbl_photos p2
+              WHERE (
+                p2.photo_id = r.id OR
+                (p2.id = r.id AND (p2.photo_id IS NULL OR p2.photo_id = r.id))
+              )
+                AND p2.timestamp IS NOT NULL
+                AND TRIM(p2.timestamp) != ''
+            )
+          )
+          $treeFilter
+      ),
+      bucketed AS (
+        SELECT
+          strftime('%Y-%W', normalized_ts) AS week,
+          CASE
+            WHEN severity_text LIKE '%healthy%' THEN 'healthy'
+            WHEN severity_text = 'high' THEN 'advanced'
+            WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
+            WHEN severity_text IN ('low', 'trace') THEN 'early'
+            WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
+            WHEN severity_pct > 12.0 THEN 'advanced'
+            WHEN severity_pct >= 0.1 THEN 'early'
+            ELSE 'healthy'
+          END AS severity_bucket
+        FROM normalized
+        WHERE normalized_ts IS NOT NULL
+          AND disease_text LIKE '%anthracnose%'
+          $monthFilter
+      ),
+      weekly AS (
+        SELECT
+          week,
+          SUM(CASE WHEN severity_bucket = 'healthy' THEN 1 ELSE 0 END) AS healthy_count,
+          SUM(CASE WHEN severity_bucket = 'early' THEN 1 ELSE 0 END) AS early_count,
+          SUM(CASE WHEN severity_bucket = 'advanced' THEN 1 ELSE 0 END) AS advanced_count,
+          COUNT(*) AS total_count
+        FROM bucketed
+        GROUP BY week
+        ORDER BY week DESC
+        LIMIT ?
+      )
+      SELECT week, healthy_count, early_count, advanced_count, total_count
+      FROM weekly
+      ORDER BY week ASC
     ''', args);
+
+    int toIntValue(Object? value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    final mapped = rows
+        .map((row) {
+          final weekRaw = row['week']?.toString() ?? '';
+          final healthy = toIntValue(row['healthy_count']);
+          final early = toIntValue(row['early_count']);
+          final advanced = toIntValue(row['advanced_count']);
+          final total = toIntValue(row['total_count']);
+          return {
+            'week': weekRaw,
+            'label': _weekLabelFromYearWeek(weekRaw),
+            'healthy': healthy,
+            'early': early,
+            'advanced': advanced,
+            'total': total,
+          };
+        })
+        .toList(growable: false);
+
+    // Keep one-week datasets chartable by prepending a zero baseline week.
+    if (mapped.length == 1) {
+      final onlyWeekRaw = mapped.first['week']?.toString() ?? '';
+      final parts = onlyWeekRaw.split('-');
+      String priorWeekRaw;
+      String priorLabel;
+
+      if (parts.length == 2) {
+        final year = int.tryParse(parts[0]) ?? 0;
+        final week = int.tryParse(parts[1]) ?? 1;
+        if (week <= 1) {
+          priorWeekRaw = '${year - 1}-52';
+        } else {
+          priorWeekRaw = '$year-${(week - 1).toString().padLeft(2, '0')}';
+        }
+        priorLabel = _weekLabelFromYearWeek(priorWeekRaw);
+      } else {
+        priorWeekRaw = '';
+        priorLabel = 'Prior';
+      }
+
+      return [
+        {
+          'week': priorWeekRaw,
+          'label': priorLabel,
+          'healthy': 0,
+          'early': 0,
+          'advanced': 0,
+          'total': 0,
+        },
+        ...mapped,
+      ];
+    }
+
+    return mapped;
+  }
+
+  Future<List<Map<String, dynamic>>> getAnthracnosePerTreeImageSeries({
+    int? treeId,
+    int limit = 200,
+    int? month,
+    int? year,
+  }) async {
+    final db = await database;
+    final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+    final bool hasMonthFilter = month != null && year != null;
+    final String monthFilter = hasMonthFilter
+        ? "AND strftime('%Y', image_ts_filter) = ? AND strftime('%m', image_ts_filter) = ?"
+        : '';
+
+    final args = <Object?>[];
+    if (treeId != null) args.add(treeId);
+    if (hasMonthFilter) {
+      args
+        ..add(year.toString())
+        ..add(month.toString().padLeft(2, '0'));
+    }
+    args.add(limit);
+
+    final rows = await db.rawQuery('''
+      WITH normalized AS (
+        SELECT
+          r.tree_id AS tree_id,
+          COALESCE(NULLIF(TRIM(t.name), ''), 'Unknown Tree') AS tree_name,
+          NULLIF(TRIM(p.timestamp), '') AS image_ts_raw,
+          COALESCE(
+            datetime(NULLIF(TRIM(p.timestamp), '')),
+            datetime(replace(NULLIF(TRIM(p.timestamp), ''), 'T', ' ')),
+            datetime(replace(replace(substr(NULLIF(TRIM(p.timestamp), ''), 1, 19), 'T', ' '), 'Z', ''))
+          ) AS image_ts_filter,
+          LOWER(TRIM(CASE
+            WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+            WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+            ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+          END)) AS disease_text,
+          LOWER(TRIM(COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), ''))) AS severity_text,
+          COALESCE(r.severity_percentage, 0) AS severity_pct
+        FROM tbl_scan_record r
+        INNER JOIN tbl_photos p ON (
+          p.photo_id = r.id OR
+          (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+        )
+        LEFT JOIN tbl_disease d ON r.disease_id = d.id
+        LEFT JOIN tbl_severity_level s ON r.severity_level_id = s.id
+        LEFT JOIN tbl_tree t ON r.tree_id = t.id
+        WHERE p.timestamp IS NOT NULL
+          AND TRIM(p.timestamp) != ''
+          $treeFilter
+      ),
+      bucketed AS (
+        SELECT
+          tree_id,
+          tree_name,
+          image_ts_raw,
+          image_ts_filter,
+          CASE
+            WHEN severity_text LIKE '%healthy%' THEN 'healthy'
+            WHEN severity_text = 'high' THEN 'advanced'
+            WHEN severity_text LIKE '%advanced%' OR severity_text LIKE '%severe%' OR severity_text LIKE '%critical%' THEN 'advanced'
+            WHEN severity_text IN ('low', 'trace') THEN 'early'
+            WHEN severity_text LIKE '%early%' OR severity_text LIKE '%moderate%' OR severity_text LIKE '%mid%' THEN 'early'
+            WHEN severity_pct > 12.0 THEN 'advanced'
+            WHEN severity_pct >= 0.1 THEN 'early'
+            ELSE 'healthy'
+          END AS stage,
+          severity_pct
+        FROM normalized
+        WHERE image_ts_filter IS NOT NULL
+          AND disease_text LIKE '%anthracnose%'
+          $monthFilter
+      ),
+      limited AS (
+        SELECT tree_id, tree_name, image_ts_raw, image_ts_filter, stage, severity_pct
+        FROM bucketed
+        ORDER BY image_ts_filter DESC
+        LIMIT ?
+      )
+      SELECT tree_id, tree_name, image_ts_raw, stage, severity_pct
+      FROM limited
+      ORDER BY image_ts_filter ASC
+    ''', args);
+
+    double toDoubleValue(Object? value) {
+      if (value is double) return value;
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '') ?? 0.0;
+    }
+
+    return rows
+        .map(
+          (row) => {
+            'tree_id': row['tree_id'],
+            'tree_name': row['tree_name']?.toString() ?? 'Unknown Tree',
+            'image_date': row['image_ts_raw']?.toString() ?? '',
+            'stage': row['stage']?.toString() ?? 'healthy',
+            'severity_pct': toDoubleValue(
+              row['severity_pct'],
+            ).clamp(0.0, 100.0),
+          },
+        )
+        .where((row) => (row['image_date']?.toString().isNotEmpty ?? false))
+        .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> getSeverityTrendMonthOptions({
+    int? treeId,
+    bool usePhotoTimestamps = false,
+  }) async {
+    final db = await database;
+    final rows = <Map<String, Object?>>[];
+
+    if (usePhotoTimestamps) {
+      final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+      final args = <Object?>[];
+      if (treeId != null) args.add(treeId);
+
+      rows.addAll(
+        await db.rawQuery('''
+          WITH normalized AS (
+            SELECT
+              datetime(replace(replace(substr(p.timestamp, 1, 19), 'T', ' '), 'Z', '')) AS normalized_ts,
+              LOWER(TRIM(CASE
+                WHEN NULLIF(TRIM(d.name), '') IS NOT NULL THEN TRIM(d.name)
+                WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
+                ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
+              END)) AS disease_text
+            FROM tbl_scan_record r
+            INNER JOIN tbl_photos p ON (
+              p.photo_id = r.id OR
+              (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+            )
+            LEFT JOIN tbl_disease d ON r.disease_id = d.id
+            WHERE p.timestamp IS NOT NULL
+              AND TRIM(p.timestamp) != ''
+              $treeFilter
+          )
+          SELECT normalized_ts
+          FROM normalized
+          WHERE normalized_ts IS NOT NULL
+            AND disease_text LIKE '%anthracnose%'
+        ''', args),
+      );
+    } else {
+      final String treeFilter = treeId != null ? 'AND r.tree_id = ?' : '';
+      final args = <Object?>[];
+      if (treeId != null) args.add(treeId);
+      rows.addAll(
+        await db.rawQuery('''
+          SELECT r.scan_timestamp, r.analysis_updated_at
+          FROM tbl_scan_record r
+          WHERE (
+              (r.scan_timestamp IS NOT NULL AND TRIM(r.scan_timestamp) != '')
+              OR (r.analysis_updated_at IS NOT NULL AND TRIM(r.analysis_updated_at) != '')
+            )
+            $treeFilter
+        ''', args),
+      );
+    }
 
     final Set<int> uniqueMonthKeys = <int>{};
     for (final row in rows) {
-      final raw = row['scan_timestamp']?.toString() ?? '';
-      final fallbackRaw = row['analysis_updated_at']?.toString() ?? '';
+      final raw = usePhotoTimestamps
+          ? (row['normalized_ts']?.toString() ?? '')
+          : (row['scan_timestamp']?.toString() ?? '');
+      final fallbackRaw = usePhotoTimestamps
+          ? ''
+          : (row['analysis_updated_at']?.toString() ?? '');
       final parsed = _parseTrendTimestamp(raw, fallbackRaw: fallbackRaw);
       if (parsed == null) continue;
       uniqueMonthKeys.add(parsed.year * 100 + parsed.month);
@@ -2287,7 +2839,8 @@ class LocalDb {
       'Nov',
       'Dec',
     ];
-    return '${monthNames[weekStart.month - 1]} ${weekStart.day}';
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    return '${monthNames[weekEnd.month - 1]} ${weekEnd.day}';
   }
 
   String _monthLabel(int month, int year) {
@@ -2662,52 +3215,72 @@ class LocalDb {
               WHEN LOWER(TRIM(COALESCE(r.disease_class, ''))) IN ('imported dataset', 'dataset', 'image detected', 'imported dataset detected', 'dataset detected') THEN ''
               ELSE COALESCE(NULLIF(TRIM(r.disease_class), ''), '')
             END as resolved_disease,
-        COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
-        COALESCE(
-          CASE
-            WHEN TRIM(r.image_path) LIKE '/data/%'
-              OR TRIM(r.image_path) LIKE '/storage/%'
-              OR TRIM(r.image_path) LIKE 'file:///%'
-              OR (TRIM(r.image_path) != '' AND TRIM(r.image_path) NOT LIKE 'http://%' AND TRIM(r.image_path) NOT LIKE 'https://%')
-              THEN NULLIF(TRIM(r.image_path), '')
-            ELSE NULL
-          END,
-          CASE
-            WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
-              OR TRIM(r.thumbnail_path) LIKE '/storage/%'
-              OR TRIM(r.thumbnail_path) LIKE 'file:///%'
-              OR (TRIM(r.thumbnail_path) != '' AND TRIM(r.thumbnail_path) NOT LIKE 'http://%' AND TRIM(r.thumbnail_path) NOT LIKE 'https://%')
-              THEN NULLIF(TRIM(r.thumbnail_path), '')
-            ELSE NULL
-          END,
-          NULLIF(TRIM((
-            SELECT p.path
-            FROM tbl_photos p
-            WHERE (
-              p.photo_id = r.id OR
-              (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
-            )
-              AND p.path IS NOT NULL
-              AND TRIM(p.path) != ''
-            ORDER BY p.id DESC
-            LIMIT 1
-          )), '')
-        ) as resolved_image_path,
-        COALESCE(
-          NULLIF(TRIM((
-            SELECT p.image_url
-            FROM tbl_photos p
-            WHERE (
-              p.photo_id = r.id OR
-              (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
-            )
-              AND p.image_url IS NOT NULL
-              AND TRIM(p.image_url) != ''
-            ORDER BY p.id DESC
-            LIMIT 1
-          )), ''),
-          ''
-        ) as resolved_image_url
+            COALESCE(NULLIF(TRIM(s.name), ''), NULLIF(TRIM(r.severity_level), ''), '') as resolved_severity_name,
+            COALESCE(
+              CASE
+                WHEN TRIM(r.image_path) LIKE '/data/%'
+                  OR TRIM(r.image_path) LIKE '/storage/%'
+                  OR TRIM(r.image_path) LIKE 'file:///%'
+                  THEN NULLIF(TRIM(r.image_path), '')
+                ELSE NULL
+              END,
+              CASE
+                WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
+                  OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                  OR TRIM(r.thumbnail_path) LIKE 'file:///%'
+                  THEN NULLIF(TRIM(r.thumbnail_path), '')
+                ELSE NULL
+              END,
+              NULLIF(TRIM((
+                SELECT p.path
+                FROM tbl_photos p
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
+                  AND p.path IS NOT NULL
+                  AND TRIM(p.path) != ''
+                  AND TRIM(p.path) NOT LIKE 'http://%'
+                  AND TRIM(p.path) NOT LIKE 'https://%'
+                  AND (
+                    TRIM(p.path) LIKE '/data/%'
+                    OR TRIM(p.path) LIKE '/storage/%'
+                    OR TRIM(p.path) LIKE 'file:///%'
+                  )
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), '')
+            ) as resolved_image_path,
+            COALESCE(
+              NULLIF(TRIM((
+                SELECT p.image_url
+                FROM tbl_photos p
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
+                  AND p.image_url IS NOT NULL
+                  AND TRIM(p.image_url) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), ''),
+              ''
+            ) as resolved_image_url,
+            COALESCE(
+              NULLIF(TRIM((
+                SELECT p.scan_dir
+                FROM tbl_photos p
+                WHERE (
+                  p.photo_id = r.id OR
+                  (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+                )
+                  AND p.scan_dir IS NOT NULL
+                  AND TRIM(p.scan_dir) != ''
+                ORDER BY p.id DESC
+                LIMIT 1
+              )), ''),
+              ''
+            ) as resolved_scan_dir
       FROM tbl_scan_record r
       LEFT JOIN tbl_tree t ON r.tree_id = t.id
       LEFT JOIN tbl_disease d ON r.disease_id = d.id
@@ -2733,7 +3306,7 @@ class LocalDb {
       confidence: (row['confidence_score'] as num?)?.toDouble() ?? 0.0,
       severityValue: (row['severity_percentage'] as num?)?.toDouble() ?? 0.0,
       photoId: null,
-      scanDir: '',
+      scanDir: row['resolved_scan_dir'] as String? ?? '',
       treeId: row['tree_id'] as int?,
       treeName: row['tree_name'] as String? ?? '',
       treeLocation: row['tree_location'] as String? ?? '',
@@ -2769,6 +3342,28 @@ class LocalDb {
     );
   }
 
+  Future<void> updateScanImageUrl(int scanId, String imageUrl) async {
+    final trimmed = imageUrl.trim();
+    if (trimmed.isEmpty) return;
+
+    final hasScanImageUrl = await _tableHasColumn(
+      'tbl_scan_record',
+      'image_url',
+    );
+    if (!hasScanImageUrl) return;
+
+    final db = await database;
+    await db.rawUpdate(
+      '''
+      UPDATE tbl_scan_record
+      SET image_url = ?
+      WHERE id = ?
+        AND (image_url IS NULL OR TRIM(image_url) = '')
+      ''',
+      [trimmed, scanId],
+    );
+  }
+
   Future<bool> _tableHasColumn(String tableName, String columnName) async {
     final db = await database;
     final rows = await db.rawQuery('PRAGMA table_info($tableName)');
@@ -2782,12 +3377,8 @@ class LocalDb {
       'image_url',
     );
     final scanRecordImageUrlSelect = hasScanImageUrl
-        ? 'NULLIF(TRIM(r.image_url), '
-              ')'
+        ? "NULLIF(TRIM(r.image_url), '')"
         : 'NULL';
-    final scanRecordImageUrlWhere = hasScanImageUrl
-        ? 'OR $scanRecordImageUrlSelect IS NOT NULL'
-        : '';
 
     final rows = await db.rawQuery('''
       WITH resolved AS (
@@ -2796,8 +3387,20 @@ class LocalDb {
           r.scan_timestamp,
           COALESCE(NULLIF(TRIM(d.name), ''), NULLIF(TRIM(r.disease_class), ''), 'Unknown') as disease_class,
           COALESCE(
-            NULLIF(TRIM(r.image_path), ''),
-            NULLIF(TRIM(r.thumbnail_path), ''),
+            CASE
+              WHEN TRIM(r.image_path) LIKE '/data/%'
+                OR TRIM(r.image_path) LIKE '/storage/%'
+                OR TRIM(r.image_path) LIKE 'file:///%'
+                THEN NULLIF(TRIM(r.image_path), '')
+              ELSE NULL
+            END,
+            CASE
+              WHEN TRIM(r.thumbnail_path) LIKE '/data/%'
+                OR TRIM(r.thumbnail_path) LIKE '/storage/%'
+                OR TRIM(r.thumbnail_path) LIKE 'file:///%'
+                THEN NULLIF(TRIM(r.thumbnail_path), '')
+              ELSE NULL
+            END,
             NULLIF(TRIM((
               SELECT p.path
               FROM tbl_photos p
@@ -2807,6 +3410,13 @@ class LocalDb {
               )
                 AND p.path IS NOT NULL
                 AND TRIM(p.path) != ''
+                AND TRIM(p.path) NOT LIKE 'http://%'
+                AND TRIM(p.path) NOT LIKE 'https://%'
+                AND (
+                  TRIM(p.path) LIKE '/data/%'
+                  OR TRIM(p.path) LIKE '/storage/%'
+                  OR TRIM(p.path) LIKE 'file:///%'
+                )
               ORDER BY p.id DESC
               LIMIT 1
             )), '')
@@ -2842,7 +3452,6 @@ class LocalDb {
       WHERE
         (image_path IS NOT NULL AND TRIM(image_path) != '') OR
         (image_url IS NOT NULL AND TRIM(image_url) != '')
-        $scanRecordImageUrlWhere
       ORDER BY COALESCE(
         datetime(replace(replace(substr(scan_timestamp, 1, 19), 'T', ' '), 'Z', '')),
         scan_timestamp
@@ -2859,16 +3468,27 @@ class LocalDb {
       'image_url',
     );
     final scanRecordImageUrlSelect = hasScanImageUrl
-        ? 'NULLIF(TRIM(image_url), '
-              ')'
+        ? "NULLIF(TRIM(image_url), '')"
         : 'NULL';
 
     return await db.rawQuery('''
       SELECT
         id,
         COALESCE(
-          NULLIF(TRIM(image_path), ''),
-          NULLIF(TRIM(thumbnail_path), ''),
+          CASE
+            WHEN TRIM(image_path) LIKE '/data/%'
+              OR TRIM(image_path) LIKE '/storage/%'
+              OR TRIM(image_path) LIKE 'file:///%'
+              THEN NULLIF(TRIM(image_path), '')
+            ELSE NULL
+          END,
+          CASE
+            WHEN TRIM(thumbnail_path) LIKE '/data/%'
+              OR TRIM(thumbnail_path) LIKE '/storage/%'
+              OR TRIM(thumbnail_path) LIKE 'file:///%'
+              THEN NULLIF(TRIM(thumbnail_path), '')
+            ELSE NULL
+          END,
           $scanRecordImageUrlSelect,
           NULLIF(TRIM((
             SELECT p.path
@@ -2879,6 +3499,13 @@ class LocalDb {
             )
               AND p.path IS NOT NULL
               AND TRIM(p.path) != ''
+              AND TRIM(p.path) NOT LIKE 'http://%'
+              AND TRIM(p.path) NOT LIKE 'https://%'
+              AND (
+                TRIM(p.path) LIKE '/data/%'
+                OR TRIM(p.path) LIKE '/storage/%'
+                OR TRIM(p.path) LIKE 'file:///%'
+              )
             ORDER BY p.id DESC
             LIMIT 1
           )), '')
@@ -2900,8 +3527,20 @@ class LocalDb {
         ) AS image_url
       FROM tbl_scan_record
       WHERE COALESCE(
-        NULLIF(TRIM(image_path), ''),
-        NULLIF(TRIM(thumbnail_path), ''),
+        CASE
+          WHEN TRIM(image_path) LIKE '/data/%'
+            OR TRIM(image_path) LIKE '/storage/%'
+            OR TRIM(image_path) LIKE 'file:///%'
+            THEN NULLIF(TRIM(image_path), '')
+          ELSE NULL
+        END,
+        CASE
+          WHEN TRIM(thumbnail_path) LIKE '/data/%'
+            OR TRIM(thumbnail_path) LIKE '/storage/%'
+            OR TRIM(thumbnail_path) LIKE 'file:///%'
+            THEN NULLIF(TRIM(thumbnail_path), '')
+          ELSE NULL
+        END,
         $scanRecordImageUrlSelect,
         NULLIF(TRIM((
           SELECT p.image_url
@@ -2916,6 +3555,39 @@ class LocalDb {
           LIMIT 1
         )), '')
       ) IS NOT NULL
+      ORDER BY id DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getScanHydrationCandidates() async {
+    final db = await database;
+    final hasScanImageUrl = await _tableHasColumn(
+      'tbl_scan_record',
+      'image_url',
+    );
+    final scanRecordImageUrlSelect = hasScanImageUrl
+        ? "NULLIF(TRIM(image_url), '')"
+        : 'NULL';
+
+    return await db.rawQuery('''
+      SELECT
+        id,
+        NULLIF(TRIM(image_path), '') AS image_path,
+        $scanRecordImageUrlSelect AS image_url
+      FROM tbl_scan_record
+      WHERE (
+        (image_path IS NOT NULL AND TRIM(image_path) != '') OR
+        $scanRecordImageUrlSelect IS NOT NULL
+      )
+      AND (
+        TRIM(COALESCE(image_path, '')) = '' OR
+        (
+          TRIM(image_path) NOT LIKE '/data/%'
+          AND TRIM(image_path) NOT LIKE '/storage/%'
+          AND TRIM(image_path) NOT LIKE 'file:///%'
+        ) OR
+        $scanRecordImageUrlSelect IS NOT NULL
+      )
       ORDER BY id DESC
     ''');
   }
@@ -3308,25 +3980,53 @@ class LocalDb {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT
+        TRIM(COALESCE((
+          SELECT p.scan_dir
+          FROM tbl_photos p
+          WHERE (
+            p.photo_id = r.id OR
+            (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+          )
+            AND p.scan_dir IS NOT NULL
+            AND TRIM(p.scan_dir) != ''
+          ORDER BY p.id DESC
+          LIMIT 1
+        ), '')) AS scan_dir,
         TRIM(t.name) AS tree_name,
         TRIM(COALESCE(t.location, '')) AS tree_location,
         CAST(r.id AS TEXT) AS scan_id
       FROM tbl_scan_record r
-      INNER JOIN tbl_tree t ON r.tree_id = t.id
-      WHERE t.name IS NOT NULL AND TRIM(t.name) != ''
-      ORDER BY tree_name COLLATE NOCASE ASC, r.id ASC
+      LEFT JOIN tbl_tree t ON r.tree_id = t.id
+      ORDER BY r.id ASC
     ''');
 
     final grouped = <String, List<String>>{};
     final groupedLocations = <String, String>{};
+    final legacyNamesByGroup = <String, Set<String>>{};
     for (final row in rows) {
+      final scanDir = (row['scan_dir']?.toString() ?? '').trim();
+      final folderName = scanDirFolderName(scanDir);
       final treeName = (row['tree_name']?.toString() ?? '').trim();
       final treeLocation = (row['tree_location']?.toString() ?? '').trim();
       final scanId = (row['scan_id']?.toString() ?? '').trim();
-      if (treeName.isEmpty || scanId.isEmpty) continue;
-      grouped.putIfAbsent(treeName, () => <String>[]).add(scanId);
-      if (treeLocation.isNotEmpty) {
-        groupedLocations.putIfAbsent(treeName, () => treeLocation);
+      final groupName = folderName.isNotEmpty ? folderName : treeName;
+      if (groupName.isEmpty ||
+          groupName == _syntheticImportedTreeName ||
+          scanId.isEmpty) {
+        continue;
+      }
+
+      grouped.putIfAbsent(groupName, () => <String>[]).add(scanId);
+      if (folderName.isEmpty && treeLocation.isNotEmpty) {
+        groupedLocations.putIfAbsent(groupName, () => treeLocation);
+      }
+      if (folderName.isNotEmpty &&
+          treeName.isNotEmpty &&
+          treeName != folderName &&
+          treeName != _syntheticImportedTreeName) {
+        legacyNamesByGroup
+            .putIfAbsent(groupName, () => <String>{})
+            .add(treeName);
       }
     }
 
@@ -3342,15 +4042,37 @@ class LocalDb {
             .toList();
         if (incoming.isEmpty) continue;
 
-        final existingRows = await txn.query(
+        final exactRows = await txn.query(
           'tbl_dataset_folders',
-          columns: ['images', 'location'],
+          columns: ['name', 'images', 'location'],
           where: 'name = ?',
           whereArgs: [treeName],
           limit: 1,
         );
+        Map<String, Object?>? existingRow = exactRows.isNotEmpty
+            ? exactRows.first
+            : null;
+        String matchedName = treeName;
 
-        if (existingRows.isEmpty) {
+        if (existingRow == null) {
+          final legacyNames =
+              legacyNamesByGroup[treeName]?.toList() ?? const <String>[];
+          for (final legacyName in legacyNames) {
+            final legacyRows = await txn.query(
+              'tbl_dataset_folders',
+              columns: ['name', 'images', 'location'],
+              where: 'name = ?',
+              whereArgs: [legacyName],
+              limit: 1,
+            );
+            if (legacyRows.isEmpty) continue;
+            existingRow = legacyRows.first;
+            matchedName = legacyName;
+            break;
+          }
+        }
+
+        if (existingRow == null) {
           final uniqueIncoming = <String>{...incoming}.toList();
           await txn.insert('tbl_dataset_folders', {
             'name': treeName,
@@ -3361,9 +4083,9 @@ class LocalDb {
           continue;
         }
 
-        final existingRaw = existingRows.first['images']?.toString() ?? '';
+        final existingRaw = existingRow['images']?.toString() ?? '';
         final existingLocation =
-            existingRows.first['location']?.toString().trim() ?? '';
+            existingRow['location']?.toString().trim() ?? '';
         final existingIds = existingRaw
             .split(',')
             .map((e) => e.trim())
@@ -3377,9 +4099,164 @@ class LocalDb {
 
         await txn.update(
           'tbl_dataset_folders',
-          {'images': merged.join(','), 'location': locationToSave},
+          {
+            'name': treeName,
+            'images': merged.join(','),
+            'location': locationToSave,
+          },
           where: 'name = ?',
+          whereArgs: [matchedName],
+        );
+      }
+    });
+  }
+
+  Future<void> generateMyTreesFromTrees() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT
+        CAST(r.id AS TEXT) AS scan_id,
+        TRIM(COALESCE((
+          SELECT p.scan_dir
+          FROM tbl_photos p
+          WHERE (
+            p.photo_id = r.id OR
+            (p.id = r.id AND (p.photo_id IS NULL OR p.photo_id = r.id))
+          )
+            AND p.scan_dir IS NOT NULL
+            AND TRIM(p.scan_dir) != ''
+          ORDER BY p.id DESC
+          LIMIT 1
+        ), '')) AS scan_dir,
+        TRIM(t.name) AS tree_name,
+        TRIM(COALESCE(t.location, '')) AS tree_location,
+        TRIM(COALESCE(r.image_path, '')) AS cover_image
+      FROM tbl_scan_record r
+      LEFT JOIN tbl_tree t ON r.tree_id = t.id
+      ORDER BY r.id DESC
+    ''');
+
+    final grouped = <String, List<String>>{};
+    final groupedLocations = <String, String>{};
+    final groupedCoverImages = <String, String>{};
+    final legacyNamesByGroup = <String, Set<String>>{};
+
+    for (final row in rows) {
+      final scanId = (row['scan_id']?.toString() ?? '').trim();
+      final scanDir = (row['scan_dir']?.toString() ?? '').trim();
+      final folderName = scanDirFolderName(scanDir);
+      final treeName = (row['tree_name']?.toString() ?? '').trim();
+      final treeLocation = (row['tree_location']?.toString() ?? '').trim();
+      final coverImage = (row['cover_image']?.toString() ?? '').trim();
+      final groupName = folderName.isNotEmpty ? folderName : treeName;
+      if (groupName.isEmpty ||
+          groupName == _syntheticImportedTreeName ||
+          scanId.isEmpty) {
+        continue;
+      }
+
+      grouped.putIfAbsent(groupName, () => <String>[]).add(scanId);
+      if (folderName.isEmpty && treeLocation.isNotEmpty) {
+        groupedLocations.putIfAbsent(groupName, () => treeLocation);
+      }
+      if (coverImage.isNotEmpty &&
+          !coverImage.startsWith('/home/') &&
+          !groupedCoverImages.containsKey(groupName)) {
+        groupedCoverImages[groupName] = coverImage;
+      }
+      if (folderName.isNotEmpty &&
+          treeName.isNotEmpty &&
+          treeName != folderName &&
+          treeName != _syntheticImportedTreeName) {
+        legacyNamesByGroup
+            .putIfAbsent(groupName, () => <String>{})
+            .add(treeName);
+      }
+    }
+
+    if (grouped.isEmpty) return;
+
+    await db.transaction((txn) async {
+      for (final entry in grouped.entries) {
+        final treeName = entry.key;
+        final scanIds = <String>{...entry.value}.join(',');
+        final treeLocation = groupedLocations[treeName] ?? '';
+        final coverImage = groupedCoverImages[treeName] ?? '';
+        if (scanIds.isEmpty) continue;
+
+        final exactRows = await txn.query(
+          'tbl_my_trees',
+          columns: ['id', 'title', 'location', 'cover_image', 'images'],
+          where: 'title = ?',
           whereArgs: [treeName],
+          limit: 1,
+        );
+        Map<String, Object?>? existingRow = exactRows.isNotEmpty
+            ? exactRows.first
+            : null;
+        String matchedTitle = treeName;
+
+        if (existingRow == null) {
+          final legacyNames =
+              legacyNamesByGroup[treeName]?.toList() ?? const <String>[];
+          for (final legacyName in legacyNames) {
+            final legacyRows = await txn.query(
+              'tbl_my_trees',
+              columns: ['id', 'title', 'location', 'cover_image', 'images'],
+              where: 'title = ?',
+              whereArgs: [legacyName],
+              limit: 1,
+            );
+            if (legacyRows.isEmpty) continue;
+            existingRow = legacyRows.first;
+            matchedTitle = legacyName;
+            break;
+          }
+        }
+
+        if (existingRow == null) {
+          await txn.insert('tbl_my_trees', {
+            'title': treeName,
+            'location': treeLocation,
+            'images': scanIds,
+            'cover_image': coverImage.isNotEmpty
+                ? coverImage
+                : 'images/leaf.png',
+          });
+          continue;
+        }
+
+        final existingLocation =
+            existingRow['location']?.toString().trim() ?? '';
+        final existingCoverImage =
+            existingRow['cover_image']?.toString().trim() ?? '';
+        final existingRaw = existingRow['images']?.toString() ?? '';
+        final existingIds = existingRaw
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final merged = <String>{...existingIds, ...entry.value};
+
+        final locationToSave = treeLocation.isNotEmpty
+            ? treeLocation
+            : existingLocation;
+        final coverImageToSave = coverImage.isNotEmpty
+            ? coverImage
+            : (existingCoverImage.isNotEmpty
+                  ? existingCoverImage
+                  : 'images/leaf.png');
+
+        await txn.update(
+          'tbl_my_trees',
+          {
+            'title': treeName,
+            'location': locationToSave,
+            'images': merged.join(','),
+            'cover_image': coverImageToSave,
+          },
+          where: 'title = ?',
+          whereArgs: [matchedTitle],
         );
       }
     });

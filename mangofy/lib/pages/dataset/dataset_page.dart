@@ -45,6 +45,7 @@ class _DatasetPageState extends State<DatasetPage> {
     _isLoadingFolders = true;
 
     try {
+      await LocalDb.instance.generateDatasetsFromTrees();
       final loadedFolders = await LocalDb.instance.getAllDatasetFolders();
       if (!mounted) return;
 

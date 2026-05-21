@@ -5,6 +5,8 @@ class OrchardSnapshot {
   final List<Map<String, dynamic>> diseaseDistributionRows;
   final Map<String, int> anthracnoseStageSummary;
   final List<Map<String, dynamic>> anthracnoseTrendSeries;
+  final List<Map<String, dynamic>> anthracnoseWeeklyStageSeries;
+  final List<Map<String, dynamic>> anthracnosePerTreeImageSeries;
   final String primaryDisease;
   final String? latestScanDate;
   final Map<String, int> rowCompleteness;
@@ -14,6 +16,8 @@ class OrchardSnapshot {
     required this.diseaseDistributionRows,
     required this.anthracnoseStageSummary,
     required this.anthracnoseTrendSeries,
+    required this.anthracnoseWeeklyStageSeries,
+    required this.anthracnosePerTreeImageSeries,
     required this.primaryDisease,
     required this.latestScanDate,
     required this.rowCompleteness,

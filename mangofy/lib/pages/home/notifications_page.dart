@@ -85,7 +85,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               return TextButton(
                 onPressed: _markAllRead,
                 child: Text(
-                  'Mark all read',
+                  'Mark all as read',
                   style: GoogleFonts.inter(
                     color: const Color(0xFF2E7D32),
                     fontWeight: FontWeight.bold,

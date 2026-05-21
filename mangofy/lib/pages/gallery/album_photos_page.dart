@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'photo_widgets.dart'; 
-import 'gallery_dialogs.dart'; 
+import 'photo_widgets.dart';
+import 'gallery_dialogs.dart';
 import '../../model/photo.dart';
 import '../../model/scan_classification.dart';
 import '../../services/local_db.dart';
 
 class AlbumPhotosPage extends StatefulWidget {
   final String albumTitle;
-  final List<String> images; 
+  final List<String> images;
 
   const AlbumPhotosPage({
     super.key,
     required this.albumTitle,
-    this.images = const [], 
+    this.images = const [],
   });
 
   @override
@@ -55,7 +55,11 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
         name: disease == 'Unknown Disease' ? scan.title : disease,
         data: '',
         timestamp: scan.timestamp,
-        path: scan.imagePath.trim().isNotEmpty ? scan.imagePath : null,
+        path:
+          scan.imagePath.trim().isNotEmpty &&
+            !isPiLinuxPath(scan.imagePath)
+          ? scan.imagePath
+          : null,
         title: scan.title,
         description: scan.description,
         imageUrl: scan.imageUrl.trim().isNotEmpty ? scan.imageUrl : null,
@@ -120,7 +124,7 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
     );
 
     overlayState.insert(overlayEntry);
-    
+
     // Remove the overlay after the animation duration
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (overlayEntry.mounted) {
@@ -143,32 +147,45 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
             children: [
               const SizedBox(height: 8),
               ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 1,
+                ),
                 leading: const Icon(Icons.edit, color: Colors.black87),
-                title: Text('Rename', 
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w500)
+                title: Text(
+                  'Rename',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w500),
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  GalleryDialogs.showRenamePhotoDialog(
-                    context,
-                    imageId,
-                    (oldName, newName) {
-                      _showSuccessAnimation(context, 'Renamed to $newName');
-                    },
-                  );
+                  GalleryDialogs.showRenamePhotoDialog(context, imageId, (
+                    oldName,
+                    newName,
+                  ) {
+                    _showSuccessAnimation(context, 'Renamed to $newName');
+                  });
                 },
               ),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 1),
-                child: Divider(height: 1, thickness: 1.2, color: Color(0xFFE0E0E0)),
+                child: Divider(
+                  height: 1,
+                  thickness: 1.2,
+                  color: Color(0xFFE0E0E0),
+                ),
               ),
               ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 1,
+                ),
                 leading: const Icon(Icons.delete, color: Colors.red),
                 title: Text(
                   'Remove from Album',
-                  style: GoogleFonts.inter(color: Colors.red, fontWeight: FontWeight.w500),
+                  style: GoogleFonts.inter(
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -192,7 +209,9 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
 
   @override
   Widget build(BuildContext context) {
-    final placeholderIds = widget.images.isEmpty ? List.generate(15, (i) => 'album_photo_$i') : widget.images;
+    final placeholderIds = widget.images.isEmpty
+        ? List.generate(15, (i) => 'album_photo_$i')
+        : widget.images;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -204,9 +223,9 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
             color: Colors.green,
           ),
         ),
-        backgroundColor: Colors.white, 
-        iconTheme: const IconThemeData(color: Colors.green), 
-        elevation: 0, 
+        backgroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.green),
+        elevation: 0,
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -214,23 +233,27 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
           future: _albumPhotosFuture,
           builder: (context, snapshot) {
             final photos = snapshot.data ?? const <Photo>[];
-            if (snapshot.connectionState == ConnectionState.waiting && photos.isEmpty) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                photos.isEmpty) {
               return const Center(child: CircularProgressIndicator());
             }
 
             if (photos.isNotEmpty) {
               return PhotoGrid(
                 photos: photos,
-                crossAxisCount: 3,
-                crossAxisSpacing: 4,
-                mainAxisSpacing: 4,
+                crossAxisCount: 4,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
                 padding: const EdgeInsets.all(4),
                 borderRadius: 8,
                 onItemTap: (index) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => FullScreenPhotoView(photo: photos[index]),
+                      builder: (context) => FullScreenPhotoView(
+                        photoList: photos,
+                        initialIndex: index,
+                      ),
                     ),
                   );
                 },
@@ -245,12 +268,13 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
             return PhotoGridPlaceholder(
               itemCount: placeholderIds.length,
               imageIds: placeholderIds,
-              crossAxisCount: 3,
+              crossAxisCount: 4,
               onItemTap: (index) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => FullScreenPhotoView(imagePath: placeholderIds[index]),
+                    builder: (context) =>
+                        FullScreenPhotoView(imagePath: placeholderIds[index]),
                   ),
                 );
               },
@@ -270,13 +294,18 @@ class _AnimatedSuccessOverlay extends StatefulWidget {
   final String message;
   final VoidCallback onFinished;
 
-  const _AnimatedSuccessOverlay({required this.message, required this.onFinished});
+  const _AnimatedSuccessOverlay({
+    required this.message,
+    required this.onFinished,
+  });
 
   @override
-  State<_AnimatedSuccessOverlay> createState() => _AnimatedSuccessOverlayState();
+  State<_AnimatedSuccessOverlay> createState() =>
+      _AnimatedSuccessOverlayState();
 }
 
-class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay> with SingleTickerProviderStateMixin {
+class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
@@ -289,7 +318,10 @@ class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay> with S
       duration: const Duration(milliseconds: 400),
     );
 
-    _scaleAnimation = CurvedAnimation(parent: _controller, curve: Curves.elasticOut);
+    _scaleAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.elasticOut,
+    );
     _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
 
     _controller.forward();
@@ -325,7 +357,7 @@ class _AnimatedSuccessOverlayState extends State<_AnimatedSuccessOverlay> with S
                     color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 20,
                     spreadRadius: 5,
-                  )
+                  ),
                 ],
               ),
               child: Column(

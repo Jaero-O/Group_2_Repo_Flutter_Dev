@@ -16,7 +16,14 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
-enum SortOption { dateNewest, dateOldest, severityHigh, severityLow }
+enum SortOption {
+  dateNewest,
+  dateOldest,
+  severityHigh,
+  severityLow,
+  treeAZ,
+  treeZA,
+}
 
 enum FilterOption { all, healthy, earlyStage, advancedStage, notApplicable }
 
@@ -72,16 +79,39 @@ class _ScanPageState extends State<ScanPage> {
     );
   }
 
+  String _statusKeyForSummary(ScanItem item) {
+    return statusKeyForScan(
+      item,
+      anthracnoseOnly: false,
+      notApplicableKey: 'not_applicable',
+      notApplicableLabel: '--',
+    );
+  }
+
   String _displayDiseaseName(ScanItem item) => displayDiseaseName(item);
 
   String _scanSubtitleFor(ScanItem item) {
     final name = item.treeName.trim();
     final location = item.treeLocation.trim();
-    if (name.isNotEmpty && location.isNotEmpty) {
-      return 'Scanned tree: $name ($location)';
+    final variety = item.treeVariety.trim();
+    final folderName = scanDirFolderName(item.scanDir);
+
+    if (name.isNotEmpty) {
+      final details = <String>[];
+      if (variety.isNotEmpty) details.add(variety);
+      if (location.isNotEmpty) details.add(location);
+      if (details.isNotEmpty) {
+        return 'Scanned tree: $name (${details.join(', ')})';
+      }
+      return 'Scanned tree: $name';
     }
-    if (name.isNotEmpty) return 'Scanned tree: $name';
+
+    if (folderName.isNotEmpty) return 'Pi folder: $folderName';
+    if (location.isNotEmpty && variety.isNotEmpty) {
+      return 'Scanned location: $location ($variety)';
+    }
     if (location.isNotEmpty) return 'Scanned location: $location';
+    if (variety.isNotEmpty) return 'Scanned tree variety: $variety';
     return 'No tree information from scan record.';
   }
 
@@ -90,11 +120,16 @@ class _ScanPageState extends State<ScanPage> {
       case 'healthy':
         return const Color(0xFF4CAF50);
       case 'early stage':
+      case 'low':
+      case 'trace':
       case 'moderate':
         return const Color(0xFFF2DA00);
       case 'advanced stage':
+      case 'high':
       case 'severe':
+      case 'critical':
         return const Color(0xFFF44336);
+      case 'unclassified':
       case '--':
       case 'n/a':
       case 'not applicable':
@@ -142,6 +177,23 @@ class _ScanPageState extends State<ScanPage> {
   List<ScanItem> _buildFilteredAndSorted(List<ScanItem> source) {
     final filteredList = List<ScanItem>.from(source);
 
+    int compareTreeName(ScanItem a, ScanItem b, {required bool ascending}) {
+      final left = a.treeName.trim().toLowerCase();
+      final right = b.treeName.trim().toLowerCase();
+      final leftEmpty = left.isEmpty;
+      final rightEmpty = right.isEmpty;
+
+      if (leftEmpty && rightEmpty) return b.id.compareTo(a.id);
+      if (leftEmpty) return 1;
+      if (rightEmpty) return -1;
+
+      final nameCompare = ascending
+          ? left.compareTo(right)
+          : right.compareTo(left);
+      if (nameCompare != 0) return nameCompare;
+      return b.id.compareTo(a.id);
+    }
+
     if (_selectedDisease != null) {
       filteredList.retainWhere(
         (record) => _displayDiseaseName(record) == _selectedDisease,
@@ -177,6 +229,10 @@ class _ScanPageState extends State<ScanPage> {
           return b.severityValue.compareTo(a.severityValue);
         case SortOption.severityLow:
           return a.severityValue.compareTo(b.severityValue);
+        case SortOption.treeAZ:
+          return compareTreeName(a, b, ascending: true);
+        case SortOption.treeZA:
+          return compareTreeName(a, b, ascending: false);
       }
     });
 
@@ -261,6 +317,8 @@ class _ScanPageState extends State<ScanPage> {
             SortOption.dateOldest: 'Date (Oldest First)',
             SortOption.severityHigh: 'Severity (High to Low)',
             SortOption.severityLow: 'Severity (Low to High)',
+            SortOption.treeAZ: 'Tree (A to Z)',
+            SortOption.treeZA: 'Tree (Z to A)',
           },
           onSelect: (option) {
             setState(() {
@@ -455,13 +513,11 @@ class _ScanPageState extends State<ScanPage> {
               )
               .toList();
     final int totalScans = statsSource.length;
-    final int healthyScans = statsSource
-        .where((record) => _statusForSummary(record) == 'Healthy')
+    final statusKeys = statsSource.map(_statusKeyForSummary).toList();
+    final int healthyScans = statusKeys.where((key) => key == 'healthy').length;
+    final int infectedScans = statusKeys
+        .where((key) => key == 'early_stage' || key == 'advanced_stage')
         .length;
-    final int infectedScans = statsSource.where((record) {
-      final status = _statusForSummary(record);
-      return status == 'Early Stage' || status == 'Advanced Stage';
-    }).length;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -692,6 +748,10 @@ class _ScanPageState extends State<ScanPage> {
         return 'Sorted: High Sev.';
       case SortOption.severityLow:
         return 'Sorted: Low Sev.';
+      case SortOption.treeAZ:
+        return 'Sorted: Tree A-Z';
+      case SortOption.treeZA:
+        return 'Sorted: Tree Z-A';
     }
   }
 
@@ -802,8 +862,10 @@ class _ScanPageState extends State<ScanPage> {
               photoId: photoId,
               localImagePath: localImagePath,
               statusLabel: status,
+              scanDir: item.scanDir,
               treeName: item.treeName,
               treeLocation: item.treeLocation,
+              treeVariety: item.treeVariety,
               diseaseDescription: item.diseaseDescription,
               diseasePrevention: item.diseasePrevention,
             ),
@@ -829,23 +891,40 @@ class _ScanPageState extends State<ScanPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    severityValue,
-                    style: GoogleFonts.inter(
-                      fontSize: 35,
-                      fontWeight: FontWeight.bold,
+                  if (status == '--') ...[
+                    const Icon(
+                      Icons.eco_outlined,
                       color: Colors.white,
-                      height: 1.1,
+                      size: 28,
                     ),
-                  ),
-                  Text(
-                    'SEVERITY',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      'DETECTED',
+                      style: GoogleFonts.inter(
+                        fontSize: 8,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    Text(
+                      severityValue,
+                      style: GoogleFonts.inter(
+                        fontSize: 35,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        height: 1.1,
+                      ),
+                    ),
+                    Text(
+                      'SEVERITY',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -869,7 +948,7 @@ class _ScanPageState extends State<ScanPage> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          status.toUpperCase(),
+                          status == '--' ? 'DETECTED' : status.toUpperCase(),
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -890,7 +969,7 @@ class _ScanPageState extends State<ScanPage> {
 
                   Text(
                     disease.toLowerCase() == 'healthy'
-                        ? 'No Disease Detected'
+                        ? 'Healthy'
                         : disease.toLowerCase() == 'unknown disease'
                         ? 'Disease Not Available'
                         : '$disease Detected',

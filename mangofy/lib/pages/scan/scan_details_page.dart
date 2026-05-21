@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../model/photo.dart';
+import '../../model/scan_classification.dart';
+import '../../model/scan_item.dart';
 import '../../services/local_db.dart';
 import '../gallery/photo_widgets.dart';
 
@@ -16,8 +18,10 @@ class ScanDetailsPage extends StatelessWidget {
   final int? photoId;
   final String? localImagePath;
   final String statusLabel;
+  final String scanDir;
   final String treeName;
   final String treeLocation;
+  final String treeVariety;
   final String diseaseDescription;
   final String diseasePrevention;
 
@@ -31,8 +35,10 @@ class ScanDetailsPage extends StatelessWidget {
     this.photoId,
     this.localImagePath,
     this.statusLabel = '',
+    this.scanDir = '',
     this.treeName = '',
     this.treeLocation = '',
+    this.treeVariety = '',
     this.diseaseDescription = '',
     this.diseasePrevention = '',
   });
@@ -105,18 +111,118 @@ class ScanDetailsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildImagePreview() {
+  void _openPhotoFullScreen(BuildContext context, Photo photo) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => FullScreenPhotoView(photo: photo)),
+    );
+  }
+
+  String _normalizeLocalImagePath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.isAbsolute && uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return trimmed.replaceFirst('file://', '');
+      }
+    }
+    return trimmed;
+  }
+
+  Widget _buildPreviewImageFromPhoto(Photo photo) {
+    final imagePath = _normalizeLocalImagePath(photo.path?.trim() ?? '');
+    final imageUrl = photo.imageUrl?.trim() ?? '';
+    final useLocalPath = imagePath.isNotEmpty && !isPiLinuxPath(imagePath);
+
+    if (useLocalPath) {
+      final isRemotePath =
+          imagePath.startsWith('http://') || imagePath.startsWith('https://');
+      if (isRemotePath) {
+        return Image.network(
+          imagePath,
+          fit: BoxFit.cover,
+          height: 200,
+          width: double.infinity,
+          errorBuilder: (_, __, ___) => Image.asset(
+            'images/leaf.png',
+            fit: BoxFit.cover,
+            height: 200,
+            width: double.infinity,
+          ),
+        );
+      }
+
+      return Image.file(
+        File(imagePath),
+        fit: BoxFit.cover,
+        height: 200,
+        width: double.infinity,
+        errorBuilder: (_, __, ___) {
+          if (imageUrl.isNotEmpty) {
+            return Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              height: 200,
+              width: double.infinity,
+              errorBuilder: (_, __, ___) => Image.asset(
+                'images/leaf.png',
+                fit: BoxFit.cover,
+                height: 200,
+                width: double.infinity,
+              ),
+            );
+          }
+          return Image.asset(
+            'images/leaf.png',
+            fit: BoxFit.cover,
+            height: 200,
+            width: double.infinity,
+          );
+        },
+      );
+    }
+
+    if (imageUrl.isNotEmpty) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        height: 200,
+        width: double.infinity,
+        errorBuilder: (_, __, ___) => Image.asset(
+          'images/leaf.png',
+          fit: BoxFit.cover,
+          height: 200,
+          width: double.infinity,
+        ),
+      );
+    }
+
+    return Image.asset(
+      'images/leaf.png',
+      fit: BoxFit.cover,
+      height: 200,
+      width: double.infinity,
+    );
+  }
+
+  Widget _buildImagePreview(BuildContext context) {
     if (photoId != null) {
       return FutureBuilder<Map<String, dynamic>?>(
         future: LocalDb.instance.getPhotoById(photoId!),
-        builder: (context, snapshot) {
+        builder: (_, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           final data = snapshot.data;
           if (data != null) {
             final photo = Photo.fromMap(data);
-            return PhotoGridItem(photo: photo, borderRadius: 8);
+            return GestureDetector(
+              onTap: () => _openPhotoFullScreen(context, photo),
+              child: _buildPreviewImageFromPhoto(photo),
+            );
           }
           return Image.asset(
             'images/leaf.png',
@@ -130,13 +236,26 @@ class ScanDetailsPage extends StatelessWidget {
 
     final path = localImagePath;
     if (path != null && path.isNotEmpty) {
-      final file = File(path);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          height: 200,
-          width: double.infinity,
+      final normalizedPath = _normalizeLocalImagePath(path);
+      final isPiPath = isPiLinuxPath(normalizedPath);
+      final isRemotePath =
+          normalizedPath.startsWith('http://') ||
+          normalizedPath.startsWith('https://');
+      final previewPhoto = Photo(
+        name: scanTitle,
+        data: '',
+        timestamp: dateScanned,
+        path: isPiPath ? null : normalizedPath,
+        imageUrl: isRemotePath ? normalizedPath : null,
+        title: scanTitle,
+        description: diseaseDescription,
+        disease: disease,
+      );
+
+      if (isRemotePath || (!isPiPath && File(normalizedPath).existsSync())) {
+        return GestureDetector(
+          onTap: () => _openPhotoFullScreen(context, previewPhoto),
+          child: _buildPreviewImageFromPhoto(previewPhoto),
         );
       }
     }
@@ -153,11 +272,14 @@ class ScanDetailsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final displayTreeName = treeName.trim();
     final displayTreeLocation = treeLocation.trim();
-    final displayTree = displayTreeName.isNotEmpty
-        ? (displayTreeLocation.isNotEmpty
-            ? '$displayTreeName ($displayTreeLocation)'
-            : displayTreeName)
-        : (displayTreeLocation.isNotEmpty ? displayTreeLocation : '');
+    final displayTreeVariety = treeVariety.trim();
+    final displayFolderName = scanDirFolderName(scanDir);
+    final displayTreeLabel = displayTreeName.isNotEmpty
+        ? displayTreeName
+        : (displayFolderName.isNotEmpty ? displayFolderName : 'Unknown');
+    final isHealthyDisease = disease.trim().toLowerCase() == 'healthy';
+    final hasAnthracnoseSeverity =
+      statusLabel.trim() != '--' && !isHealthyDisease;
     final displayDescription = diseaseDescription.trim().isNotEmpty
         ? diseaseDescription.trim()
         : kLongDescription;
@@ -194,48 +316,56 @@ class ScanDetailsPage extends StatelessWidget {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: _buildImagePreview(),
+                              child: _buildImagePreview(context),
                             ),
                           ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Text(
-                                '$severityValue%',
-                                style: GoogleFonts.inter(
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.bold,
-                                  color: severityColor,
-                                  height: 1.0,
+                          if (hasAnthracnoseSeverity) ...[
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '$severityValue%',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 64,
+                                    fontWeight: FontWeight.bold,
+                                    color: severityColor,
+                                    height: 1.0,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _buildDiseaseTag(disease),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'SEVERITY LEVEL',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[600],
-                              letterSpacing: 1.0,
+                                const SizedBox(width: 8),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: _buildDiseaseTag(disease),
+                                ),
+                              ],
                             ),
-                          ),
-                          if (statusLabel.trim().isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text(
-                              statusLabel,
+                              'SEVERITY LEVEL',
                               style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: severityColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[600],
+                                letterSpacing: 1.0,
                               ),
+                            ),
+                            if (statusLabel.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                statusLabel,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: severityColor,
+                                ),
+                              ),
+                            ],
+                          ] else ...[
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: _buildDiseaseTag(disease),
                             ),
                           ],
                           const SizedBox(height: 32),
@@ -277,14 +407,39 @@ class ScanDetailsPage extends StatelessWidget {
                               ),
                             ],
                           ),
-                          if (displayTree.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Tree',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              Flexible(
+                                child: Text(
+                                  displayTreeLabel,
+                                  textAlign: TextAlign.right,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (displayFolderName.isNotEmpty &&
+                              displayFolderName != displayTreeName) ...[
                             const SizedBox(height: 16),
                             Row(
                               mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Tree',
+                                  'Pi Folder',
                                   style: GoogleFonts.inter(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -293,7 +448,61 @@ class ScanDetailsPage extends StatelessWidget {
                                 ),
                                 Flexible(
                                   child: Text(
-                                    displayTree,
+                                    displayFolderName,
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (displayTreeLocation.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Location',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    displayTreeLocation,
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (displayTreeVariety.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Variety',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Flexible(
+                                  child: Text(
+                                    displayTreeVariety,
                                     textAlign: TextAlign.right,
                                     style: GoogleFonts.inter(
                                       fontSize: 16,

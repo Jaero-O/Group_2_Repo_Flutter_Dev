@@ -217,6 +217,20 @@ class _FolderViewPageState extends State<FolderViewPage> {
     _loadImagePaths();
   }
 
+  String _normalizeLocalPath(String rawPath) {
+    final trimmed = rawPath.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.isAbsolute && uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return trimmed.replaceFirst('file://', '');
+      }
+    }
+    return trimmed;
+  }
+
   Future<void> _loadImagePaths() async {
     final paths = <String, String?>{};
     final urls = <String, String?>{};
@@ -228,7 +242,20 @@ class _FolderViewPageState extends State<FolderViewPage> {
       final id = int.tryParse(key);
       if (id != null) {
         final scan = await LocalDb.instance.getScanById(id);
-        paths[key] = scan?.imagePath;
+        String? imagePath = scan?.imagePath;
+        if (imagePath != null) {
+          final normalized = _normalizeLocalPath(imagePath);
+          // Pi-exported Linux paths are not readable on-device; allow
+          // network/image_url fallback or placeholder rendering instead.
+          if (normalized.startsWith('/home/') ||
+              normalized.startsWith('/opt/') ||
+              normalized.startsWith('/var/')) {
+            imagePath = null;
+          } else {
+            imagePath = normalized;
+          }
+        }
+        paths[key] = imagePath;
         urls[key] = scan?.imageUrl;
         scans[key] = scan;
       }
@@ -305,7 +332,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: TextButton(
-                          onPressed: () async {
+                        onPressed: () async {
                           Navigator.pop(dialogContext);
 
                           // Call DB service to remove the image
@@ -380,7 +407,7 @@ class _FolderViewPageState extends State<FolderViewPage> {
               padding: const EdgeInsets.all(16),
 
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3, // 3 columns
+                crossAxisCount: 4, // 4 columns
                 crossAxisSpacing: 6, // Horizontal spacing
                 mainAxisSpacing: 6, // Vertical spacing
               ),
@@ -392,16 +419,13 @@ class _FolderViewPageState extends State<FolderViewPage> {
                 final url = _imageUrls[img]?.trim() ?? '';
                 final scan = _scanItems[img];
                 final localPath = (path ?? '').trim();
-                final isLocalFile =
-                    localPath.isNotEmpty &&
-                    !localPath.startsWith('http://') &&
-                    !localPath.startsWith('https://') &&
-                    File(localPath).existsSync();
-                final networkSource =
+                final isRemotePath =
                     localPath.startsWith('http://') ||
-                        localPath.startsWith('https://')
+                    localPath.startsWith('https://');
+                final isLocalFile = localPath.isNotEmpty && !isRemotePath;
+                final networkSource = isRemotePath
                     ? localPath
-                    : ((url.startsWith('http://') || url.startsWith('https://'))
+                    : (url.startsWith('http://') || url.startsWith('https://')
                           ? url
                           : '');
                 final parsed = DateTime.tryParse(scan?.timestamp ?? '');
@@ -452,10 +476,22 @@ class _FolderViewPageState extends State<FolderViewPage> {
                                         File(localPath),
                                         fit: BoxFit.cover,
                                         errorBuilder:
-                                            (context, error, stackTrace) =>
-                                                const Icon(
-                                                  Icons.image_not_supported,
-                                                ),
+                                            (context, error, stackTrace) {
+                                              if (networkSource.isNotEmpty) {
+                                                return Image.network(
+                                                  networkSource,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) =>
+                                                      const Icon(
+                                                        Icons
+                                                            .image_not_supported,
+                                                      ),
+                                                );
+                                              }
+                                              return const Icon(
+                                                Icons.image_not_supported,
+                                              );
+                                            },
                                       )
                                     : Image.network(
                                         networkSource,
@@ -520,11 +556,11 @@ class _FolderViewPageState extends State<FolderViewPage> {
                               ],
                             ),
                           )
-                        : Center(
-                            child: Text(
-                              'No image',
-                              style: const TextStyle(fontSize: 12),
-                              textAlign: TextAlign.center,
+                        : const Center(
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: Colors.grey,
+                              size: 40,
                             ),
                           ),
                   ),

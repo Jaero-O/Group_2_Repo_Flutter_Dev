@@ -1,3 +1,17 @@
+String scanDirFolderName(String rawScanDir) {
+  final normalized = rawScanDir.trim().replaceAll('\\', '/');
+  if (normalized.isEmpty) return '';
+
+  final segments = normalized
+      .split('/')
+      .map((segment) => segment.trim())
+      .where((segment) => segment.isNotEmpty)
+      .toList(growable: false);
+  if (segments.isEmpty) return '';
+
+  return segments.last;
+}
+
 class ScanItem {
   final int id;
   final String title;
@@ -79,6 +93,20 @@ class ScanItem {
     return RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(suffix);
   }
 
+  static Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return value.cast<String, dynamic>();
+    return const <String, dynamic>{};
+  }
+
+  static String _firstNonEmptyTimestamp(List<dynamic> candidates) {
+    for (final candidate in candidates) {
+      final text = candidate?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
   factory ScanItem.fromJson(Map<String, dynamic> json) {
     // Backward-compatible parsing:
     // - Old Pi payload: {id,title,description,timestamp,image_url,...}
@@ -90,13 +118,24 @@ class ScanItem {
         json.containsKey('reduced_image') ||
         json.containsKey('scan_dir');
 
-    final String timestamp =
-      json['timestamp']?.toString().trim().isNotEmpty == true
-      ? json['timestamp'].toString()
-      : (json['scan_timestamp']?.toString() ??
-          json['created_at']?.toString() ??
-          json['date']?.toString() ??
-          '');
+    final scanDetail = _asMap(json['scan_detail'] ?? json['scanDetail']);
+    final scanResult = _asMap(json['scan_result'] ?? json['scanResult']);
+    final nestedScanDetail = _asMap(
+      scanResult['scan_detail'] ?? scanResult['scanDetail'],
+    );
+
+    final String timestamp = _firstNonEmptyTimestamp([
+      json['timestamp'],
+      json['scan_timestamp'],
+      scanDetail['timestamp'],
+      scanDetail['scan_timestamp'],
+      nestedScanDetail['timestamp'],
+      nestedScanDetail['scan_timestamp'],
+      scanResult['timestamp'],
+      scanResult['scan_timestamp'],
+      json['created_at'],
+      json['date'],
+    ]);
     final String scanDir = json['scan_dir']?.toString() ?? '';
     final String reducedImage = json['reduced_image']?.toString() ?? '';
 
@@ -154,6 +193,8 @@ class ScanItem {
 
     final double severityValue = json.containsKey('severity_percentage')
         ? _numToDouble(json['severity_percentage'])
+        : json.containsKey('severity_pct')
+        ? _numToDouble(json['severity_pct'])
         : json.containsKey('severity_value')
         ? _numToDouble(json['severity_value'])
         : (disease.toLowerCase() == 'healthy' ? 0.0 : (confidence * 100.0));
@@ -175,22 +216,27 @@ class ScanItem {
         ? json['title'].toString()
         : (disease.isNotEmpty ? disease : 'Scan');
 
-    // Parse tree data
-    final tree = json['tree'];
-    final int? treeId = tree is Map<String, dynamic>
+    // Parse tree data from common Pi payload shapes.
+    final tree = _asMap(
+      json['tree'] ??
+          scanDetail['tree'] ??
+          nestedScanDetail['tree'] ??
+          scanResult['tree'],
+    );
+    final int? treeId = tree.isNotEmpty
         ? (tree['id'] is int
               ? tree['id'] as int
               : int.tryParse(tree['id']?.toString() ?? ''))
-        : null;
-    final String treeName = tree is Map<String, dynamic>
+        : int.tryParse(json['tree_id']?.toString() ?? '');
+    final String treeName = tree.isNotEmpty
         ? tree['name']?.toString() ?? ''
-        : '';
-    final String treeLocation = tree is Map<String, dynamic>
+        : (json['tree_name']?.toString() ?? '');
+    final String treeLocation = tree.isNotEmpty
         ? tree['location']?.toString() ?? ''
-        : '';
-    final String treeVariety = tree is Map<String, dynamic>
+        : (json['tree_location']?.toString() ?? '');
+    final String treeVariety = tree.isNotEmpty
         ? tree['variety']?.toString() ?? ''
-        : '';
+        : (json['tree_variety']?.toString() ?? '');
 
     // Parse disease data
     final diseaseObj = json['disease_obj'] ?? json['disease_data'];

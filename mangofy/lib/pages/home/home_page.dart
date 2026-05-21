@@ -12,7 +12,6 @@ import 'notifications_page.dart';
 import 'anthracnose_risk_forecast_card.dart';
 import 'recommended_actions_card.dart';
 import 'severity_distributions_card.dart';
-import 'severity_progression.dart';
 import 'threat_level_card.dart';
 
 class HomePage extends StatefulWidget {
@@ -44,6 +43,9 @@ class _HomePageState extends State<HomePage> {
     SyncService.instance.lastSyncNotifier.addListener(_onSyncUpdated);
     SyncService.instance.progressNotifier.addListener(_onSyncProgressChanged);
     _isSyncing = SyncService.instance.progressNotifier.value != null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runAutoSyncFromSavedQr();
+    });
   }
 
   @override
@@ -59,6 +61,22 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _isSyncing = isSyncingNow;
     });
+  }
+
+  Future<void> _runAutoSyncFromSavedQr() async {
+    final imported = await SyncService.instance.autoSyncIfReachable();
+    if (!mounted) return;
+
+    if (imported > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$imported new scan(s) synced from Pi.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    await _refresh();
   }
 
   Future<void> _loadUnreadNotificationCount() async {
@@ -129,7 +147,7 @@ class _HomePageState extends State<HomePage> {
     return ThreatLevel.low;
   }
 
-  double _resolveWeeklyTrendPercentFromSeries(
+  int _resolveWeeklyTrendDeltaFromSeries(
     List<Map<String, dynamic>> trendSeries,
   ) {
     if (trendSeries.length < 2) return 0;
@@ -139,10 +157,7 @@ class _HomePageState extends State<HomePage> {
     final current =
         (trendSeries[trendSeries.length - 1]['count'] as int?)?.toDouble() ?? 0;
 
-    if (previous <= 0) {
-      return current > 0 ? 100 : 0;
-    }
-    return ((current - previous) / previous) * 100;
+    return (current - previous).toInt();
   }
 
   String _resolveTrendDirection(List<Map<String, dynamic>> trendSeries) {
@@ -304,6 +319,8 @@ class _HomePageState extends State<HomePage> {
                   'total': 0,
                 },
                 anthracnoseTrendSeries: const <Map<String, dynamic>>[],
+                anthracnoseWeeklyStageSeries: const <Map<String, dynamic>>[],
+                anthracnosePerTreeImageSeries: const <Map<String, dynamic>>[],
                 primaryDisease: 'No Active Disease',
                 latestScanDate: null,
                 rowCompleteness: const <String, int>{
@@ -329,6 +346,10 @@ class _HomePageState extends State<HomePage> {
 
               final anthracnoseCount =
                   snapshotData.anthracnoseStageSummary['total'] ?? 0;
+        final anthracnoseStageSeries =
+                  snapshotData.anthracnoseWeeklyStageSeries;
+        final anthracnosePerTreeImageSeries =
+          snapshotData.anthracnosePerTreeImageSeries;
               final anthracnoseTrendData = snapshotData.anthracnoseTrendSeries
                   .map((row) => ((row['count'] as int?) ?? 0).toDouble())
                   .toList(growable: false);
@@ -337,7 +358,7 @@ class _HomePageState extends State<HomePage> {
                 anthracnoseCases: anthracnoseCount,
                 totalScans: summaryData.totalScans,
               );
-              final weeklyTrendPercent = _resolveWeeklyTrendPercentFromSeries(
+              final weeklyTrendDelta = _resolveWeeklyTrendDeltaFromSeries(
                 snapshotData.anthracnoseTrendSeries,
               );
               final trendDirection = _resolveTrendDirection(
@@ -575,14 +596,10 @@ class _HomePageState extends State<HomePage> {
                           scientificName: 'C. gloeosporioides',
                           activeCases: anthracnoseCount,
                           threatLevel: anthracnoseThreatLevel,
-                          weeklyTrendPercent: weeklyTrendPercent,
+                          weeklyTrendDelta: weeklyTrendDelta,
                           trendData: anthracnoseTrendData,
-                          chartLabel: 'Anthracnose cases (11-week trend)',
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        SeverityProgressionChart(
+                          stageSeries: anthracnoseStageSeries,
+                          perTreeImageSeries: anthracnosePerTreeImageSeries,
                           treeId: _selectedTreeId,
                           refreshKey: _severityChartReloadKey,
                         ),
@@ -613,6 +630,7 @@ class _HomePageState extends State<HomePage> {
                             return AnthracnoseRiskForecastCard(
                               treeId: _selectedTreeId,
                               weather: weatherSnapshot.data,
+                              stageSeries: anthracnoseStageSeries,
                             );
                           },
                         ),

@@ -198,6 +198,8 @@ class DeviceNotificationService {
     await init();
 
     final stageSummary = await LocalDb.instance.getAnthracnoseStageSummary();
+    final severityAverages =
+        await LocalDb.instance.getAnthracnoseSeverityAverages();
     final trend = await LocalDb.instance.getDiseaseWeeklyTrendSeries(
       diseaseKeyword: 'anthracnose',
     );
@@ -207,6 +209,8 @@ class DeviceNotificationService {
       stageSummary: stageSummary,
       weeklyTrend: trend,
       weather: weather,
+      averageEarlySeverityPct: severityAverages['early'],
+      averageAdvancedSeverityPct: severityAverages['advanced'],
     );
 
     if (assessment.riskLevel != RiskLevel.high &&

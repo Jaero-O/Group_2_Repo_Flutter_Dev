@@ -52,7 +52,9 @@ class PiQrEndpoints {
 
     final uri = Uri.tryParse(v);
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-      throw FormatException('Invalid $fieldName: must be a valid URL (e.g. "http://192.168.4.1:5000/api/status").');
+      throw FormatException(
+        'Invalid $fieldName: must be a valid URL (e.g. "http://192.168.4.1:5000/api/status").',
+      );
     }
 
     final path = uri.path.isEmpty ? '/' : uri.path;
@@ -94,55 +96,108 @@ class PiQrEndpoints {
     final endpointsObj = (obj['endpoints'] is Map)
         ? (obj['endpoints'] as Map).cast<String, dynamic>()
         : (obj['api'] is Map)
-            ? (obj['api'] as Map).cast<String, dynamic>()
-            : obj;
+        ? (obj['api'] as Map).cast<String, dynamic>()
+        : obj;
 
-    final statusPath = _validateAndNormalizeUrlField(
-          _readString(endpointsObj, const ['statusPath', 'status_path', 'status', 'statusUrl', 'status_url']),
+    final topLevelScanAllUrl = _readString(obj, const [
+      'scan_all_url',
+      'scanAllUrl',
+    ]);
+
+    final statusPath =
+        _validateAndNormalizeUrlField(
+          _readString(endpointsObj, const [
+            'statusPath',
+            'status_path',
+            'status',
+            'statusUrl',
+            'status_url',
+          ]),
           'status URL',
         ) ??
         '/api/status';
 
-    final dbDownloadPath = _normalizePathOrUrl(
-      _readString(endpointsObj, const ['dbDownloadPath', 'db_download_path', 'db_download', 'db', 'dbDownloadUrl', 'db_download_url']),
-    ) ??
-    '/api/db/download';
+    final dbDownloadPath =
+        _normalizePathOrUrl(
+          _readString(endpointsObj, const [
+            'dbDownloadPath',
+            'db_download_path',
+            'db_download',
+            'db',
+            'dbDownloadUrl',
+            'db_download_url',
+          ]),
+        ) ??
+        '/api/db/download';
 
-    final scanBundlePathTemplate = _normalizePathOrUrl(
-      _readString(endpointsObj, const ['scanBundlePathTemplate', 'scan_bundle_path_template', 'scan_bundle_template', 'scan_bundle', 'scanBundleUrl', 'scan_bundle_url']),
-    ) ??
-    '/api/scan/{id}/bundle';
+    final scanBundlePathTemplate =
+        _normalizePathOrUrl(
+          _readString(endpointsObj, const [
+            'scanBundlePathTemplate',
+            'scan_bundle_path_template',
+            'scan_bundle_template',
+            'scan_bundle',
+            'scanBundleUrl',
+            'scan_bundle_url',
+          ]),
+        ) ??
+        '/api/scan/{id}/bundle';
 
-    final bulkImagesZipPath = _normalizePathOnly(
-      _readString(endpointsObj, const ['bulkImagesZipPath', 'bulk_images_zip_path', 'bulk_images_path', 'bulkImageZipPath']),
-    ) ??
-    '/api/images/bulk-zip';
+    final bulkImagesZipPath =
+        _normalizePathOnly(
+          _readString(endpointsObj, const [
+            'bulkImagesZipPath',
+            'bulk_images_zip_path',
+            'bulk_images_path',
+            'bulkImageZipPath',
+          ]),
+        ) ??
+        '/api/images/bulk-zip';
 
-    final scansAllPath = _normalizePathOnly(
-          _readString(endpointsObj, const ['scansAllPath', 'scans_all_path', 'scan_all_path', 'scan_all_url']),
+    final scansAllPath =
+        _normalizePathOnly(
+          _readString(endpointsObj, const [
+                'scansAllPath',
+                'scans_all_path',
+                'scan_all_path',
+                'scan_all_url',
+              ]) ??
+              topLevelScanAllUrl,
         ) ??
         '/api/scan/all';
 
-    final scansSincePathTemplate = _normalizePathOrUrl(
-          _readString(endpointsObj, const ['scansSincePathTemplate', 'scans_since_path_template', 'scan_since_template', 'scan_since_url_template']),
+    final scansSincePathTemplate =
+        _normalizePathOrUrl(
+          _readString(endpointsObj, const [
+            'scansSincePathTemplate',
+            'scans_since_path_template',
+            'scan_since_template',
+            'scan_since_url_template',
+          ]),
         ) ??
         '/api/scan/since/{timestamp}';
 
-    final scanByIdPathTemplate = _normalizePathOrUrl(
-          _readString(endpointsObj, const ['scanByIdPathTemplate', 'scan_by_id_path_template', 'scan_path_template']),
+    final scanByIdPathTemplate =
+        _normalizePathOrUrl(
+          _readString(endpointsObj, const [
+            'scanByIdPathTemplate',
+            'scan_by_id_path_template',
+            'scan_path_template',
+          ]),
         ) ??
         '/api/scan/{id}';
 
-    final imagePathTemplate = _normalizeTemplate(
-      _readString(endpointsObj, const [
-        'imagePathTemplate',
-        'image_path_template',
-        'image_template',
-        'imageUrlBase',
-        'image_url_base',
-      ]),
-    ) ??
-    '/api/image/{filename}';
+    final imagePathTemplate =
+        _normalizeTemplate(
+          _readString(endpointsObj, const [
+            'imagePathTemplate',
+            'image_path_template',
+            'image_template',
+            'imageUrlBase',
+            'image_url_base',
+          ]),
+        ) ??
+        '/api/image/{filename}';
 
     return PiQrEndpoints(
       statusPath: statusPath,
@@ -159,7 +214,9 @@ class PiQrEndpoints {
   String resolveBundlePath(String id) {
     final template = scanBundlePathTemplate;
     if (template == null || template.isEmpty) {
-      throw const FormatException('QR payload is missing scan bundle endpoint template.');
+      throw const FormatException(
+        'QR payload is missing scan bundle endpoint template.',
+      );
     }
     if (!template.contains('{id}')) {
       return template;
@@ -169,12 +226,16 @@ class PiQrEndpoints {
 
   String resolveScansSincePath(String timestamp) {
     final template = scansSincePathTemplate;
-    return template.contains('{timestamp}') ? template.replaceAll('{timestamp}', timestamp) : template;
+    return template.contains('{timestamp}')
+        ? template.replaceAll('{timestamp}', timestamp)
+        : template;
   }
 
   String resolveScanByIdPath(String id) {
     final template = scanByIdPathTemplate;
-    return template.contains('{id}') ? template.replaceAll('{id}', id) : template;
+    return template.contains('{id}')
+        ? template.replaceAll('{id}', id)
+        : template;
   }
 
   String resolveImagePath(String fileName, {int? scanId}) {
@@ -196,13 +257,17 @@ class PiQrEndpoints {
         path = path.replaceAll('{id}', scanId.toString());
       }
     }
-    return path.contains('{filename}') ? path.replaceAll('{filename}', fileName) : path;
+    return path.contains('{filename}')
+        ? path.replaceAll('{filename}', fileName)
+        : path;
   }
 
   String resolveBulkImagesZipPath(List<String> fileNames) {
     final path = bulkImagesZipPath;
     if (path == null || path.isEmpty) {
-      throw const FormatException('QR payload is missing bulk images zip endpoint path.');
+      throw const FormatException(
+        'QR payload is missing bulk images zip endpoint path.',
+      );
     }
     final encoded = fileNames
         .map((name) => name.trim())
@@ -218,6 +283,7 @@ class PiQrEndpoints {
 class PiQrData {
   final String ssid;
   final String password;
+
   /// Base URL for the Pi API, e.g. `http://192.168.4.1:5000`.
   ///
   /// Back-compat: this was previously named `scanUrl` in earlier QR codes.
@@ -225,6 +291,7 @@ class PiQrData {
 
   /// Optional scan id (older flows use this to show a specific image after import).
   final String? scanId;
+  final String? scanAllUrl;
   final DateTime issuedAt;
   final String? altScanUrl;
   final PiQrEndpoints endpoints;
@@ -234,12 +301,19 @@ class PiQrData {
     required this.password,
     required this.scanUrl,
     this.scanId,
+    this.scanAllUrl,
     required this.issuedAt,
     this.altScanUrl,
     this.endpoints = const PiQrEndpoints(),
   });
 
-  String get baseUrl => scanUrl;
+  String get baseUrl {
+    final preferred = _deriveBaseUrlFromRawUrl(scanAllUrl);
+    if (preferred != null && preferred.isNotEmpty) {
+      return preferred;
+    }
+    return scanUrl;
+  }
 
   static String? _findFirstString(Map<String, dynamic> obj, List<String> keys) {
     for (final key in keys) {
@@ -274,7 +348,9 @@ class PiQrData {
     if (raw != null) return raw;
 
     if (obj['endpoints'] is Map) {
-      return _findFirstUrlValue((obj['endpoints'] as Map).cast<String, dynamic>());
+      return _findFirstUrlValue(
+        (obj['endpoints'] as Map).cast<String, dynamic>(),
+      );
     }
     if (obj['api'] is Map) {
       return _findFirstUrlValue((obj['api'] as Map).cast<String, dynamic>());
@@ -285,7 +361,10 @@ class PiQrData {
   factory PiQrData.fromJson(Map<String, dynamic> obj) {
     final endpoints = PiQrEndpoints.fromJson(obj);
 
-    final rawUrl = (obj['base_url'] ?? obj['baseUrl'] ?? obj['scan_url'] ?? obj['scanUrl'])?.toString() ?? '';
+    final rawUrl =
+        (obj['base_url'] ?? obj['baseUrl'] ?? obj['scan_url'] ?? obj['scanUrl'])
+            ?.toString() ??
+        '';
     final endpointUrl = _findFirstUrlValue(obj);
     String url = rawUrl.trim();
     if (url.isEmpty && endpointUrl != null) {
@@ -298,7 +377,9 @@ class PiQrData {
     if (url.isNotEmpty) {
       final uri = Uri.tryParse(url);
       if (uri == null || !uri.hasScheme) {
-        throw const FormatException('baseUrl must include a scheme (e.g. "http://192.168.4.1:5000").');
+        throw const FormatException(
+          'baseUrl must include a scheme (e.g. "http://192.168.4.1:5000").',
+        );
       }
       if (uri.scheme != 'http' && uri.scheme != 'https') {
         throw const FormatException('baseUrl must be http or https.');
@@ -306,20 +387,33 @@ class PiQrData {
     }
 
     final ssid = obj['ssid']?.toString().trim() ?? '';
-    final password = (obj['pwd']?.toString() ?? obj['password']?.toString() ?? '').trim();
-    if (ssid.isEmpty) throw const FormatException('QR payload missing required field: ssid');
-    if (password.isEmpty) throw const FormatException('QR payload missing required field: password');
+    final password =
+        (obj['pwd']?.toString() ?? obj['password']?.toString() ?? '').trim();
+    if (ssid.isEmpty)
+      throw const FormatException('QR payload missing required field: ssid');
+    if (password.isEmpty)
+      throw const FormatException(
+        'QR payload missing required field: password',
+      );
     // baseUrl is strongly recommended, but if omitted we will fall back to the default hotspot IP.
 
     return PiQrData(
       ssid: ssid,
       password: password,
       scanUrl: url,
-      scanId: (obj['scan_id'] ?? obj['scanId'])?.toString().trim().isEmpty == true
+      scanId:
+          (obj['scan_id'] ?? obj['scanId'])?.toString().trim().isEmpty == true
           ? null
           : (obj['scan_id'] ?? obj['scanId'])?.toString().trim(),
-      issuedAt: DateTime.tryParse(obj['issued_at']?.toString() ?? obj['issuedAt']?.toString() ?? '') ?? DateTime.now().toUtc(),
-      altScanUrl: obj['alt_scan_url']?.toString() ?? obj['altScanUrl']?.toString(),
+      scanAllUrl:
+          obj['scan_all_url']?.toString() ?? obj['scanAllUrl']?.toString(),
+      issuedAt:
+          DateTime.tryParse(
+            obj['issued_at']?.toString() ?? obj['issuedAt']?.toString() ?? '',
+          ) ??
+          DateTime.now().toUtc(),
+      altScanUrl:
+          obj['alt_scan_url']?.toString() ?? obj['altScanUrl']?.toString(),
       endpoints: endpoints,
     );
   }
@@ -334,7 +428,9 @@ class PiQrData {
     } on FormatException {
       rethrow;
     } catch (_) {
-      throw const FormatException('Invalid QR payload. Expected JSON with ssid/password/baseUrl and endpoints.');
+      throw const FormatException(
+        'Invalid QR payload. Expected JSON with ssid/password/baseUrl and endpoints.',
+      );
     }
   }
 }

@@ -55,12 +55,14 @@ class SyncService {
       timestamp: dt,
     );
   }
+
   final ValueNotifier<SyncProgress?> progressNotifier = ValueNotifier(null);
   final ValueNotifier<SyncDiagnostics?> diagnosticsNotifier = ValueNotifier(
     null,
   );
 
   static const _lastSyncKey = 'pi_sync_last_sync_at';
+  static const lastQrPayloadKey = 'pi_last_qr_raw';
   static const int _imageHydrationConcurrency = 12;
   static const int _imageImportConcurrency = 12;
   static const int _bulkZipFileChunkSize = 120;
@@ -75,6 +77,107 @@ class SyncService {
   Future<void> _setLastSyncAt(DateTime time) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastSyncKey, time.toIso8601String());
+  }
+
+  Future<int> autoSyncIfReachable() async {
+    if (progressNotifier.value != null) {
+      return 0;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final rawPayload = (prefs.getString(lastQrPayloadKey) ?? '').trim();
+    if (rawPayload.isEmpty) {
+      return 0;
+    }
+
+    final PiQrData qrData;
+    try {
+      qrData = PiQrData.fromRaw(rawPayload);
+    } catch (_) {
+      return 0;
+    }
+
+    String baseUrl = qrData.baseUrl.isNotEmpty
+        ? qrData.baseUrl
+        : PiApi.hotspotBaseUrl;
+    final diagnostics = SyncDiagnostics();
+    diagnosticsNotifier.value = diagnostics;
+
+    List<ScanItem> scans;
+    try {
+      // Always fetch all scans here because Pi timestamp filtering can drift
+      // with timezone/format differences. Local upsert keeps this idempotent.
+      scans = await PiApi.instance.getScansAll(
+        baseUrl,
+        endpoints: qrData.endpoints,
+      );
+    } catch (_) {
+      try {
+        final connected = await HotspotService.instance.connectToPi(qrData);
+        if (!connected) {
+          return 0;
+        }
+
+        final candidates = <String>[];
+        if (baseUrl.isNotEmpty) {
+          candidates.add(baseUrl);
+        }
+        if (PiApi.hotspotBaseUrl != baseUrl) {
+          candidates.add(PiApi.hotspotBaseUrl);
+        }
+        if (qrData.altScanUrl?.isNotEmpty == true &&
+            !candidates.contains(qrData.altScanUrl)) {
+          candidates.add(qrData.altScanUrl!);
+        }
+
+        final resolvedBaseUrl = await HotspotService.instance.findFirstReadyPi(
+          candidates,
+          statusPath: qrData.endpoints.statusPath,
+          timeout: const Duration(seconds: 15),
+        );
+        if (resolvedBaseUrl == null || resolvedBaseUrl.isEmpty) {
+          return 0;
+        }
+
+        baseUrl = resolvedBaseUrl;
+        scans = await PiApi.instance.getScansAll(
+          baseUrl,
+          endpoints: qrData.endpoints,
+        );
+      } catch (_) {
+        return 0;
+      }
+    }
+
+    if (scans.isEmpty) {
+      return 0;
+    }
+
+    try {
+      final countBefore = await LocalDb.instance.getScanCount();
+      await _processScans(scans, baseUrl: baseUrl, endpoints: qrData.endpoints);
+      await reconcileGalleryFromScans();
+      final countAfter = await LocalDb.instance.getScanCount();
+      final newScans = countAfter > countBefore
+          ? (countAfter - countBefore)
+          : 0;
+
+      final now = DateTime.now().toUtc();
+      await _setLastSyncAt(now);
+      lastSyncNotifier.value = now;
+      await DeviceNotificationService.instance.notifySyncSummary(
+        importedScans: newScans,
+        failures: diagnostics.failures,
+      );
+      await DeviceNotificationService.instance.notifyRiskIfHigh(
+        sourceLabel: 'sync',
+      );
+      return newScans;
+    } catch (_) {
+      return 0;
+    } finally {
+      progressNotifier.value = null;
+    }
   }
 
   Future<void> sync() async {
@@ -454,13 +557,15 @@ class SyncService {
     }
 
     await LocalDb.instance.batchUpsertPhotos(photoRows);
+    await LocalDb.instance.generateMyTreesFromTrees();
+    await LocalDb.instance.generateDatasetsFromTrees();
   }
 
   Future<void> _normalizeImportedImagePaths() async {
     final docs = await getApplicationDocumentsDirectory();
     final photosDir = Directory(join(docs.path, 'photos'));
     await photosDir.create(recursive: true);
-    final importable = await LocalDb.instance.getScanImageCandidates();
+    final importable = await LocalDb.instance.getScanHydrationCandidates();
 
     await Future.wait(
       importable.map((row) async {
@@ -513,7 +618,7 @@ class SyncService {
     final photosDir = Directory(join(docs.path, 'photos'));
     await photosDir.create(recursive: true);
 
-    final importable = await LocalDb.instance.getScanImageCandidates();
+    final importable = await LocalDb.instance.getScanHydrationCandidates();
 
     final pending = <Map<String, dynamic>>[];
     final pendingCandidates = await Future.wait(
@@ -613,11 +718,21 @@ class SyncService {
           final scanId = item['scanId'] as int;
           final remoteFileName = item['remoteFileName'] as String;
           final localFileName = item['localFileName'] as String;
+          final downloadPath = endpoints.resolveImagePath(
+            remoteFileName,
+            scanId: scanId,
+          );
+
+          final downloadUrl = Uri.parse(
+            baseUrl,
+          ).resolve(downloadPath).toString();
+          await LocalDb.instance.updateScanImageUrl(scanId, downloadUrl);
+
           diagnostics.imagesAttempted++;
           try {
             final localPath = await PiApi.instance.downloadFile(
               baseUrl: baseUrl,
-              path: endpoints.resolveImagePath(remoteFileName, scanId: scanId),
+              path: downloadPath,
               fileName: localFileName,
               timeout: const Duration(seconds: 30),
             );
@@ -755,7 +870,9 @@ class SyncService {
             : 'Scan ${remote.id}';
         final photoTimestamp = remote.timestamp.isNotEmpty
             ? remote.timestamp
-            : DateTime.now().toIso8601String();
+            : (remote.updatedAt.isNotEmpty
+                  ? remote.updatedAt
+                  : DateTime.now().toIso8601String());
 
         int? photoId = await LocalDb.instance.getPhotoIdByNameTimestamp(
           photoName,

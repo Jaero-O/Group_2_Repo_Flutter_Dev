@@ -6,27 +6,91 @@ import '../model/weather_data.dart';
 class RiskCalculator {
   const RiskCalculator._();
 
+  static List<double> computeDailyForecast({
+    required RiskAssessment baseAssessment,
+    WeatherData? weather,
+    int days = 7,
+  }) {
+    if (days <= 0) return const <double>[];
+
+    final wf = weatherRiskFactor(weather);
+    final base = _clampDouble(baseAssessment.infectionProbability, 0.01, 0.99);
+
+    // Keep a minimum bell-curve amplitude so the forecast does not flatten.
+    final weatherAmplitude = math.max(0.08, wf * 0.40);
+    final peakProbability = _clampDouble(base + weatherAmplitude, base, 0.99);
+
+    final peakDay = wf > 0.6 ? 2 : 3;
+
+    final recoveryLevel = _clampDouble(
+      base + weatherAmplitude * (0.20 + wf * 0.30),
+      0.01,
+      peakProbability,
+    );
+
+    final forecast = List<double>.filled(days, 0.0);
+    for (int i = 0; i < days; i++) {
+      double value;
+      if (i <= peakDay) {
+        final t = peakDay > 0 ? i / peakDay : 1.0;
+        final ease = (1 - math.cos(t * math.pi)) / 2.0;
+        value = base + ease * (peakProbability - base);
+      } else {
+        final remaining = (days - 1) - peakDay;
+        final t = remaining > 0 ? (i - peakDay) / remaining : 1.0;
+        final ease = (1 - math.cos(t * math.pi)) / 2.0;
+        value = peakProbability + ease * (recoveryLevel - peakProbability);
+      }
+      forecast[i] = _clampDouble(value, 0.01, 0.99);
+    }
+
+    return forecast;
+  }
+
   static RiskAssessment computeRisk({
     required Map<String, int> stageSummary,
     required List<Map<String, dynamic>> weeklyTrend,
+    List<Map<String, dynamic>>? stageTrend,
     WeatherData? weather,
+    double? averageEarlySeverityPct,
+    double? averageAdvancedSeverityPct,
   }) {
     final early = stageSummary['early'] ?? 0;
     final advanced = stageSummary['advanced'] ?? 0;
     final total = stageSummary['total'] ?? 0;
 
-    final prior = _clampDouble(
+    final countPrior = _clampDouble(
       total <= 0 ? 0.05 : (early + advanced) / total,
       0.05,
       0.95,
     );
 
-    final trendSlope = _linearRegressionSlope(
-      weeklyTrend.map((row) => _toDouble(row['count'])).toList(growable: false),
+    final severityPressure = _clampDouble(
+      (((averageAdvancedSeverityPct ?? 0.0) * 0.75) +
+              ((averageEarlySeverityPct ?? 0.0) * 0.30)) /
+          100.0,
+      0.0,
+      1.0,
     );
-    final lastWeekCount = weeklyTrend.isNotEmpty
-        ? _toDouble(weeklyTrend.last['count'])
-        : 1.0;
+
+    final prior = _clampDouble(
+      (countPrior * 0.65) + (severityPressure * 0.35),
+      0.05,
+      0.95,
+    );
+
+    final trendSeries = stageTrend != null && stageTrend.isNotEmpty
+        ? stageTrend
+              .map(
+                (row) => _toDouble(row['early']) + _toDouble(row['advanced']),
+              )
+              .toList(growable: false)
+        : weeklyTrend
+              .map((row) => _toDouble(row['count']))
+              .toList(growable: false);
+
+    final trendSlope = _linearRegressionSlope(trendSeries);
+    final lastWeekCount = trendSeries.isNotEmpty ? trendSeries.last : 1.0;
     final trendDelta = _clampDouble(
       trendSlope / math.max(1.0, lastWeekCount),
       -0.4,
@@ -47,8 +111,13 @@ class RiskCalculator {
 
     final earlyPct = total <= 0 ? 0.0 : early / total;
     final advancedPct = total <= 0 ? 0.0 : advanced / total;
-    final estimatedYieldLoss = _clampDouble(
+    final countEstimatedYieldLoss = _clampDouble(
       (advancedPct * 0.75) + (earlyPct * 0.30),
+      0.0,
+      1.0,
+    );
+    final estimatedYieldLoss = _clampDouble(
+      (countEstimatedYieldLoss * 0.6) + (severityPressure * 0.4),
       0.0,
       1.0,
     );

@@ -8,10 +8,49 @@ const Set<String> _kGenericDiseaseLabels = {
   'dataset detected',
 };
 
+const Set<String> _kPiLinuxPathPrefixes = {
+  '/home/',
+  '/opt/',
+  '/var/',
+  '/etc/',
+  '/usr/',
+  '/srv/',
+  '/tmp/',
+};
+
 bool isGenericDetectionLabel(String value) {
   final normalized = value.trim().toLowerCase();
   if (normalized.isEmpty) return true;
   return _kGenericDiseaseLabels.contains(normalized);
+}
+
+bool isPiLinuxPath(String value) {
+  var normalized = value.trim();
+  if (normalized.isEmpty) return false;
+
+  final uri = Uri.tryParse(normalized);
+  if (uri != null && uri.isAbsolute && uri.scheme == 'file') {
+    try {
+      normalized = uri.toFilePath();
+    } catch (_) {
+      normalized = normalized.replaceFirst(RegExp(r'^file://'), '');
+    }
+  }
+
+  final path = normalized.toLowerCase();
+  if (RegExp(r'^[a-z]:[\\/]').hasMatch(path)) {
+    return false;
+  }
+  if (path.startsWith('\\\\')) {
+    return false;
+  }
+
+  for (final prefix in _kPiLinuxPathPrefixes) {
+    if (path.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 String formatDiseaseClassLabel(String raw) {
@@ -80,24 +119,15 @@ String statusForScan(
   bool anthracnoseOnly = true,
   String notApplicableLabel = '--',
 }) {
-  if (anthracnoseOnly && !isAnthracnoseScan(item)) return notApplicableLabel;
-
-  final level = normalizeSeverityLabel(item.severityLevelName);
-  const knownStatuses = {'Healthy', 'Early Stage', 'Advanced Stage'};
-  if (level.isNotEmpty && knownStatuses.contains(level)) return level;
-
   final disease = displayDiseaseName(item, unknownLabel: '').toLowerCase();
   if (disease == 'healthy') return 'Healthy';
 
-  final severity = item.severityValue;
-  if (severity > 40.0) return 'Advanced Stage';
-  if (severity > 5.0) return 'Early Stage';
+  if (anthracnoseOnly && !isAnthracnoseScan(item)) return notApplicableLabel;
 
-  if (disease.isNotEmpty && disease != 'healthy') {
-    return 'Early Stage';
-  }
+  final level = item.severityLevelName.trim();
+  if (level.isNotEmpty && level.toLowerCase() != 'none') return level;
 
-  return 'Healthy';
+  return 'Unclassified';
 }
 
 String statusKeyForScan(
@@ -106,6 +136,9 @@ String statusKeyForScan(
   String notApplicableKey = 'not_applicable',
   String notApplicableLabel = '--',
 }) {
+  final disease = displayDiseaseName(item, unknownLabel: '').toLowerCase();
+  if (disease == 'healthy') return 'healthy';
+
   if (anthracnoseOnly && !isAnthracnoseScan(item)) return notApplicableKey;
 
   final status = statusForScan(
@@ -120,11 +153,13 @@ String statusKeyForScan(
       status.contains('critical')) {
     return 'advanced_stage';
   }
+  if (status == 'high') return 'advanced_stage';
   if (status.contains('early') ||
       status.contains('moderate') ||
       status.contains('mid')) {
     return 'early_stage';
   }
+  if (status == 'low' || status == 'trace') return 'early_stage';
   if (status == notApplicableLabel.toLowerCase() ||
       status == 'n/a' ||
       status == 'not applicable') {

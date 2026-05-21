@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/local_db.dart';
 import '../services/qr_scanner_service.dart';
 import '../services/sync_service.dart';
@@ -132,6 +133,10 @@ class _ScannerPageState extends State<ScannerPage> {
 
       // Automatically connect and sync with Pi when the QR is scanned.
       await SyncService.instance.syncFromPi(qrData);
+
+      // Persist the latest QR payload so future launches can auto-sync.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(SyncService.lastQrPayloadKey, raw);
 
       setState(() {
         _status = 'Finalizing import…';
