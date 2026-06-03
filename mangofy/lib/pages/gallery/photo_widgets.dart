@@ -133,7 +133,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
             ),
           Positioned(
             top: 40,
-            right: 16,
+            right: 8,
             child: SafeArea(
               child: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white, size: 30),
@@ -156,18 +156,11 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.photo,
-            color: Colors.white70,
-            size: 80,
-          ),
+          const Icon(Icons.photo, color: Colors.white70, size: 80),
           const SizedBox(height: 16),
           Text(
             'Viewing: ${widget.imagePath}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
         ],
       ),
@@ -202,18 +195,11 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
               padding: const EdgeInsets.only(top: 4),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.science,
-                    color: Colors.white70,
-                    size: 16,
-                  ),
+                  const Icon(Icons.science, color: Colors.white70, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Disease: ${photo.disease!}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -223,18 +209,11 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
               padding: const EdgeInsets.only(top: 2),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.verified,
-                    color: Colors.white70,
-                    size: 16,
-                  ),
+                  const Icon(Icons.verified, color: Colors.white70, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Confidence: ${(photo.confidence! * 100).round()}%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -252,10 +231,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                   const SizedBox(width: 8),
                   Text(
                     'Classification: ${photo.severityLabel!}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -265,18 +241,11 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
               padding: const EdgeInsets.only(top: 2),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.warning,
-                    color: Colors.white70,
-                    size: 16,
-                  ),
+                  const Icon(Icons.warning, color: Colors.white70, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Severity: ${photo.severityValue!.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -286,10 +255,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 photo.description!,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -299,10 +265,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Scanned: ${_formatTimestampLabel(photo.timestamp)}',
-                style: const TextStyle(
-                  color: Colors.white60,
-                  fontSize: 10,
-                ),
+                style: const TextStyle(color: Colors.white60, fontSize: 10),
               ),
             ),
         ],
@@ -336,11 +299,14 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
     final s = int.tryParse(m.group(6) ?? '0');
     if (y == null || mo == null || d == null) return raw;
 
-    return DateTime.utc(y, mo, d, h ?? 0, mi ?? 0, s ?? 0)
-        .toLocal()
-        .toString()
-        .split('.')
-        .first;
+    return DateTime.utc(
+      y,
+      mo,
+      d,
+      h ?? 0,
+      mi ?? 0,
+      s ?? 0,
+    ).toLocal().toString().split('.').first;
   }
 
   String _normalizeLocalImagePath(String path) {
@@ -688,7 +654,10 @@ class PhotoGridItem extends StatelessWidget {
                 const Icon(Icons.image_not_supported, color: Colors.grey),
           );
         } else {
-          imageWidget = const Icon(Icons.image_not_supported, color: Colors.grey);
+          imageWidget = const Icon(
+            Icons.image_not_supported,
+            color: Colors.grey,
+          );
         }
       } else if (imageUrl != null && imageUrl.isNotEmpty) {
         imageWidget = Image.network(
@@ -702,11 +671,7 @@ class PhotoGridItem extends StatelessWidget {
         // Use base64-backed image for legacy items
         try {
           final bytes = base64Decode(imageData);
-          imageWidget = Image.memory(
-            bytes,
-            fit: BoxFit.cover,
-            cacheWidth: 400,
-          );
+          imageWidget = Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 400);
         } catch (e) {
           // Fallback if base64 decode fails
           imageWidget = const Icon(Icons.broken_image, color: Colors.grey);
@@ -735,7 +700,7 @@ class PhotoGridItem extends StatelessWidget {
                       horizontal: 6,
                       vertical: 2,
                     ),
-                        decoration: BoxDecoration(
+                    decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,

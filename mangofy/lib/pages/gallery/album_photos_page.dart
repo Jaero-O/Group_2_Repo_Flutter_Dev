@@ -22,11 +22,74 @@ class AlbumPhotosPage extends StatefulWidget {
 
 class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
   late Future<List<Photo>> _albumPhotosFuture;
+  late String _albumTitle;
 
   @override
   void initState() {
     super.initState();
+    _albumTitle = widget.albumTitle;
     _albumPhotosFuture = _loadAlbumPhotos();
+  }
+
+  void _showNotification(String message, {bool isDelete = false}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isDelete ? Icons.delete_outline : Icons.check_circle,
+              color: isDelete ? Colors.red : const Color(0xFF4CAF50),
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 200,
+          left: 20,
+          right: 20,
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showRenameTreeDialog() {
+    GalleryDialogs.showEditAlbumNameDialog(context, _albumTitle, (
+      oldName,
+      newName,
+    ) async {
+      try {
+        await LocalDb.instance.updateMyTreeTitle(oldName, newName);
+        if (!mounted) return;
+        setState(() {
+          _albumTitle = newName;
+        });
+        _showNotification('Tree renamed to "$newName"');
+      } catch (_) {
+        _showNotification('Could not rename tree.', isDelete: true);
+      }
+    });
   }
 
   Future<List<Photo>> _loadAlbumPhotos() async {
@@ -55,11 +118,9 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
         name: disease == 'Unknown Disease' ? scan.title : disease,
         data: '',
         timestamp: scan.timestamp,
-        path:
-          scan.imagePath.trim().isNotEmpty &&
-            !isPiLinuxPath(scan.imagePath)
-          ? scan.imagePath
-          : null,
+        path: scan.imagePath.trim().isNotEmpty && !isPiLinuxPath(scan.imagePath)
+            ? scan.imagePath
+            : null,
         title: scan.title,
         description: scan.description,
         imageUrl: scan.imageUrl.trim().isNotEmpty ? scan.imageUrl : null,
@@ -97,11 +158,11 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
       // Support older non-ID album entries that store direct local paths.
       ordered.add(
         Photo(
-          name: widget.albumTitle,
+          name: _albumTitle,
           data: '',
           timestamp: DateTime.now().toIso8601String(),
           path: raw,
-          title: widget.albumTitle,
+          title: _albumTitle,
         ),
       );
     }
@@ -217,7 +278,7 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          widget.albumTitle,
+          _albumTitle,
           style: GoogleFonts.inter(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -226,6 +287,24 @@ class _AlbumPhotosPageState extends State<AlbumPhotosPage> {
         backgroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.green),
         elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.green),
+            color: Colors.white,
+            onSelected: (value) {
+              if (value == 'rename') {
+                _showRenameTreeDialog();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'rename',
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Text('Rename Tree'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

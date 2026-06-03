@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'photo_widgets.dart';
-import 'gallery_dialogs.dart';
 import '../../model/photo.dart';
 
 // Widget that displays a grid or list of photos depending on the view mode.
@@ -158,21 +157,6 @@ class PhotoGridContent extends StatelessWidget {
         onItemLongPress: (index) {
           if (onPhotoLongPress != null) {
             onPhotoLongPress!(sortedPhotos[index].id.toString());
-          } else {
-            GalleryDialogs.showDeleteConfirmationDialog(
-              context,
-              'Photo',
-              sortedPhotos[index].id.toString(),
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Photo ${sortedPhotos[index].name} marked for deletion!',
-                    ),
-                  ),
-                );
-              },
-            );
           }
         },
       );
@@ -417,13 +401,6 @@ class PhotoGridContent extends StatelessWidget {
         if (id == null) return;
         if (onPhotoLongPress != null) {
           onPhotoLongPress!(id.toString());
-        } else {
-          GalleryDialogs.showDeleteConfirmationDialog(
-            context,
-            'Photo',
-            id.toString(),
-            () {},
-          );
         }
       },
     );

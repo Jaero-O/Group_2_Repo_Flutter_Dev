@@ -31,6 +31,8 @@ class _GalleryPageState extends State<GalleryPage> {
   static const int _scanPageSize = 400;
   bool isPhotosView = true;
   final List<String> selectedImages = [];
+  final List<String> _deleteSelectedPhotoIds = [];
+  final List<String> _deleteSelectedAlbumTitles = [];
   String? selectedAlbumTitle;
   List<MyTree> myTreesAlbums = [];
   List<PhotoMetadata> photos = [];
@@ -40,6 +42,8 @@ class _GalleryPageState extends State<GalleryPage> {
   int _offset = 0;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  bool _isPhotoDeleteMode = false;
+  bool _isAlbumDeleteMode = false;
 
   String _normalizeTimestamp(String raw, {String? fallbackRaw}) {
     final trimmed = raw.trim().isNotEmpty
@@ -257,6 +261,146 @@ class _GalleryPageState extends State<GalleryPage> {
 
   // --- HANDLERS ---
 
+  bool get _isDeleteMode => _isPhotoDeleteMode || _isAlbumDeleteMode;
+
+  List<String> _activeDeleteSelections() {
+    return _isPhotoDeleteMode
+        ? _deleteSelectedPhotoIds
+        : _deleteSelectedAlbumTitles;
+  }
+
+  List<String> _currentDeleteIds() {
+    if (_isPhotoDeleteMode) {
+      return photos.map((photo) => photo.id.toString()).toList();
+    }
+    if (_isAlbumDeleteMode) {
+      return myTreesAlbums.map((album) => album.title).toList();
+    }
+    return const <String>[];
+  }
+
+  void _enterPhotoDeleteMode(String imageId) {
+    setState(() {
+      isPhotosView = true;
+      _isPhotoDeleteMode = true;
+      _isAlbumDeleteMode = false;
+      _deleteSelectedPhotoIds
+        ..clear()
+        ..add(imageId);
+      _deleteSelectedAlbumTitles.clear();
+    });
+  }
+
+  void _enterAlbumDeleteMode(String title) {
+    setState(() {
+      isPhotosView = false;
+      _isAlbumDeleteMode = true;
+      _isPhotoDeleteMode = false;
+      _deleteSelectedAlbumTitles
+        ..clear()
+        ..add(title);
+      _deleteSelectedPhotoIds.clear();
+    });
+  }
+
+  void _exitDeleteMode() {
+    setState(() {
+      _isPhotoDeleteMode = false;
+      _isAlbumDeleteMode = false;
+      _deleteSelectedPhotoIds.clear();
+      _deleteSelectedAlbumTitles.clear();
+    });
+  }
+
+  void _toggleDeletePhotoSelection(String id) {
+    setState(() {
+      _deleteSelectedPhotoIds.contains(id)
+          ? _deleteSelectedPhotoIds.remove(id)
+          : _deleteSelectedPhotoIds.add(id);
+    });
+  }
+
+  void _toggleDeleteAlbumSelection(String title) {
+    setState(() {
+      _deleteSelectedAlbumTitles.contains(title)
+          ? _deleteSelectedAlbumTitles.remove(title)
+          : _deleteSelectedAlbumTitles.add(title);
+    });
+  }
+
+  void _toggleDeleteSelectAll() {
+    final allCurrent = _currentDeleteIds();
+    final active = _activeDeleteSelections();
+    final allSelected =
+        allCurrent.isNotEmpty && allCurrent.every(active.contains);
+
+    setState(() {
+      if (_isPhotoDeleteMode) {
+        if (allSelected) {
+          _deleteSelectedPhotoIds.removeWhere(allCurrent.contains);
+        } else {
+          for (final id in allCurrent) {
+            if (!_deleteSelectedPhotoIds.contains(id)) {
+              _deleteSelectedPhotoIds.add(id);
+            }
+          }
+        }
+      } else if (_isAlbumDeleteMode) {
+        if (allSelected) {
+          _deleteSelectedAlbumTitles.removeWhere(allCurrent.contains);
+        } else {
+          for (final title in allCurrent) {
+            if (!_deleteSelectedAlbumTitles.contains(title)) {
+              _deleteSelectedAlbumTitles.add(title);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  void _confirmDeleteSelection() {
+    final selectedCount = _activeDeleteSelections().length;
+    if (selectedCount == 0) return;
+
+    final noun = _isPhotoDeleteMode ? 'photo' : 'tree';
+    GalleryDialogs.showDeleteConfirmationDialog(
+      context,
+      _isPhotoDeleteMode ? 'Photo' : 'Tree',
+      '$selectedCount selected $noun${selectedCount == 1 ? '' : 's'}',
+      () async {
+        if (_isPhotoDeleteMode) {
+          final photoIds = List<String>.from(_deleteSelectedPhotoIds);
+          for (final id in photoIds) {
+            final parsed = int.tryParse(id);
+            if (parsed == null) continue;
+            await LocalDb.instance.deletePhoto(parsed);
+          }
+          await _loadData();
+          if (!mounted) return;
+          _showNotification(
+            '$selectedCount photo${selectedCount == 1 ? '' : 's'} deleted.',
+            isDelete: true,
+          );
+        } else if (_isAlbumDeleteMode) {
+          final albumTitles = List<String>.from(_deleteSelectedAlbumTitles);
+          for (final title in albumTitles) {
+            await LocalDb.instance.deleteMyTreeByTitle(title);
+          }
+          await _loadData();
+          if (!mounted) return;
+          _showNotification(
+            '$selectedCount tree${selectedCount == 1 ? '' : 's'} deleted.',
+            isDelete: true,
+          );
+        }
+
+        if (!mounted) return;
+        _exitDeleteMode();
+      },
+    );
+  }
+
   void _handleAlbumCreation(
     String albumName,
     String location,
@@ -280,175 +424,12 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
-  void _handleAlbumNameUpdate(String oldName, String newName) async {
-    try {
-      await LocalDb.instance.updateMyTreeTitle(oldName, newName);
-      await _loadData();
-      if (!mounted) return;
-      _showNotification('Tree renamed to "$newName"');
-    } catch (_) {
-      if (!mounted) return;
-      _showNotification('Could not rename tree.', isDelete: true);
-    }
-  }
-
-  void _handleAlbumDeletion(String albumName) async {
-    try {
-      await LocalDb.instance.deleteMyTreeByTitle(albumName);
-      await _loadData();
-      if (!mounted) return;
-      _showNotification('Tree "$albumName" deleted.', isDelete: true);
-    } catch (_) {
-      if (!mounted) return;
-      _showNotification('Could not delete tree.', isDelete: true);
-    }
-  }
-
   void _handlePhotoLongPress(String imageId) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 1,
-                ),
-                leading: const Icon(Icons.edit, color: Colors.black87),
-                title: Text(
-                  'Rename Photo',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w500),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  GalleryDialogs.showRenamePhotoDialog(context, imageId, (
-                    oldId,
-                    newName,
-                  ) {
-                    _showNotification('Photo renamed to "$newName"');
-                  });
-                },
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Divider(
-                  height: 1,
-                  thickness: 1.2,
-                  color: Color(0xFFE0E0E0),
-                ),
-              ),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 1,
-                ),
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: Text(
-                  'Delete Photo',
-                  style: GoogleFonts.inter(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  GalleryDialogs.showDeleteConfirmationDialog(
-                    context,
-                    'Photo',
-                    imageId,
-                    () async {
-                      await LocalDb.instance.deletePhoto(int.parse(imageId));
-                      await _loadData();
-                      _showNotification('Photo deleted!', isDelete: true);
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
+    _enterPhotoDeleteMode(imageId);
   }
 
   void _handleAlbumLongPress(MyTree album) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(35)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 1,
-                ),
-                leading: const Icon(Icons.edit, color: Colors.black87),
-                title: Text(
-                  'Rename Tree',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w500),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  GalleryDialogs.showEditAlbumNameDialog(
-                    context,
-                    album.title,
-                    _handleAlbumNameUpdate,
-                  );
-                },
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Divider(
-                  height: 1,
-                  thickness: 1.2,
-                  color: Color(0xFFE0E0E0),
-                ),
-              ),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 1,
-                ),
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: Text(
-                  'Delete Tree',
-                  style: GoogleFonts.inter(
-                    color: Colors.red,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  GalleryDialogs.showDeleteConfirmationDialog(
-                    context,
-                    'Tree',
-                    album.title,
-                    () => _handleAlbumDeletion(album.title),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
+    _enterAlbumDeleteMode(album.title);
   }
 
   // --- UTILS ---
@@ -466,6 +447,8 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   String _getAppBarTitle() {
+    if (_isPhotoDeleteMode) return 'Select Photos';
+    if (_isAlbumDeleteMode) return 'Select Trees';
     if (!widget.isSelectionMode) return isPhotosView ? 'Gallery' : 'My Trees';
     return isPhotosView
         ? 'Select Images'
@@ -515,6 +498,17 @@ class _GalleryPageState extends State<GalleryPage> {
       for (final p in photos)
         if (p.id != null) p.id!: p,
     };
+
+    if (!widget.isSelectionMode && _isPhotoDeleteMode) {
+      return PhotosSelectionGrid(
+        contentKey: 'DeletePhotos',
+        allImageIds: photos.map((photo) => photo.id.toString()).toList(),
+        selectedImages: _deleteSelectedPhotoIds,
+        photosById: photosById,
+        onToggleSelection: _toggleDeletePhotoSelection,
+      );
+    }
+
     if (!widget.isSelectionMode) {
       return isPhotosView
           ? PhotosView(
@@ -526,6 +520,9 @@ class _GalleryPageState extends State<GalleryPage> {
               albums: myTreesAlbums,
               onAlbumLongPress: _handleAlbumLongPress,
               photosById: photosById,
+              isDeleteSelectionMode: _isAlbumDeleteMode,
+              selectedAlbumTitles: _deleteSelectedAlbumTitles,
+              onToggleAlbumSelection: _toggleDeleteAlbumSelection,
             );
     }
     if (isPhotoSelectionScreen) {
@@ -580,124 +577,185 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
+    return PopScope(
+      canPop: !_isDeleteMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isDeleteMode) {
+          _exitDeleteMode();
+        }
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text(
-                _getAppBarTitle(),
-                style: GoogleFonts.inter(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  _getAppBarTitle(),
+                  style: GoogleFonts.inter(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
                 ),
               ),
-            ),
-            if (!widget.isSelectionMode)
-              GestureDetector(
-                onTap: () => setState(() => isPhotosView = !isPhotosView),
-                child: Row(
-                  children: [
-                    if (!isPhotosView)
-                      const Icon(Icons.chevron_left, color: Colors.green),
-                    Text(
-                      isPhotosView ? 'My Trees' : 'Photos',
+              if (!widget.isSelectionMode && !_isDeleteMode)
+                GestureDetector(
+                  onTap: () => setState(() => isPhotosView = !isPhotosView),
+                  child: Row(
+                    children: [
+                      if (!isPhotosView)
+                        const Icon(Icons.chevron_left, color: Colors.green),
+                      Text(
+                        isPhotosView ? 'My Trees' : 'Photos',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      if (isPhotosView)
+                        const Icon(Icons.chevron_right, color: Colors.green),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          actions: _isDeleteMode
+              ? [
+                  TextButton(
+                    onPressed: _toggleDeleteSelectAll,
+                    child: Text(
+                      _currentDeleteIds().isNotEmpty &&
+                              _currentDeleteIds().every(
+                                _activeDeleteSelections().contains,
+                              )
+                          ? 'Deselect All'
+                          : 'Select All',
                       style: GoogleFonts.inter(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: Colors.green,
                       ),
                     ),
-                    if (isPhotosView)
-                      const Icon(Icons.chevron_right, color: Colors.green),
-                  ],
-                ),
-              ),
+                  ),
+                  const SizedBox(width: 8),
+                ]
+              : widget.isSelectionMode &&
+                    (isPhotosView || selectedAlbumTitle != null)
+              ? [
+                  TextButton(
+                    onPressed: _toggleSelectAll,
+                    child: Text(
+                      _getCurrentImageIds().every(selectedImages.contains)
+                          ? 'Deselect All'
+                          : 'Select All',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ]
+              : null,
+        ),
+        body: Stack(
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (isPhotosView && notification.metrics.extentAfter < 600) {
+                  _loadMorePhotos();
+                }
+                return false;
+              },
+              child: _buildBodyContent(),
+            ),
+            _buildSelectedCountChip(),
           ],
         ),
-        actions:
-            widget.isSelectionMode &&
-                (isPhotosView || selectedAlbumTitle != null)
-            ? [
-                TextButton(
-                  onPressed: _toggleSelectAll,
-                  child: Text(
-                    _getCurrentImageIds().every(selectedImages.contains)
-                        ? 'Deselect All'
-                        : 'Select All',
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
+        bottomNavigationBar: _isDeleteMode
+            ? Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-                const SizedBox(width: 8),
-              ]
+                child: Row(
+                  children: [
+                    Text(
+                      '${_activeDeleteSelections().length} selected',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _activeDeleteSelections().isEmpty
+                          ? null
+                          : _confirmDeleteSelection,
+                      icon: const Icon(
+                        Icons.delete,
+                        color: Colors.red,
+                        size: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : widget.isSelectionMode
+            ? Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: _handleBackButton,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.green,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.chevron_left),
+                          Text(
+                            (!isPhotosView && selectedAlbumTitle != null)
+                                ? 'Back to Albums'
+                                : 'Back',
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: selectedImages.isEmpty
+                          ? null
+                          : () => Navigator.pop(context, selectedImages),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.green,
+                      ),
+                      icon: const Icon(Icons.save),
+                      label: Text('Save (${selectedImages.length})'),
+                    ),
+                  ],
+                ),
+              )
+            : null,
+        floatingActionButton:
+            !widget.isSelectionMode && !isPhotosView && !_isDeleteMode
+            ? FloatingActionButton(
+                backgroundColor: Colors.green,
+                onPressed: () => GalleryDialogs.showCreateAlbumDialog(
+                  context,
+                  _handleAlbumCreation,
+                ),
+                child: const Icon(Icons.add, color: Colors.white),
+              )
             : null,
       ),
-      body: Stack(
-        children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (isPhotosView && notification.metrics.extentAfter < 600) {
-                _loadMorePhotos();
-              }
-              return false;
-            },
-            child: _buildBodyContent(),
-          ),
-          _buildSelectedCountChip(),
-        ],
-      ),
-      bottomNavigationBar: widget.isSelectionMode
-          ? Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton(
-                    onPressed: _handleBackButton,
-                    style: TextButton.styleFrom(foregroundColor: Colors.green),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.chevron_left),
-                        Text(
-                          (!isPhotosView && selectedAlbumTitle != null)
-                              ? 'Back to Albums'
-                              : 'Back',
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: selectedImages.isEmpty
-                        ? null
-                        : () => Navigator.pop(context, selectedImages),
-                    style: TextButton.styleFrom(foregroundColor: Colors.green),
-                    icon: const Icon(Icons.save),
-                    label: Text('Save (${selectedImages.length})'),
-                  ),
-                ],
-              ),
-            )
-          : null,
-      floatingActionButton: !widget.isSelectionMode && !isPhotosView
-          ? FloatingActionButton(
-              backgroundColor: Colors.green,
-              onPressed: () => GalleryDialogs.showCreateAlbumDialog(
-                context,
-                _handleAlbumCreation,
-              ),
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
     );
   }
 }

@@ -83,15 +83,16 @@ class PhotosSelectionGrid extends StatelessWidget {
                 else
                   const Icon(Icons.photo, size: 40, color: Colors.grey),
                 if (selected)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.green.withAlpha(127),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.check_circle,
-                      size: 30,
-                      color: Colors.white,
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      child: const Center(
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 30,
+                          color: Colors.green,
+                        ),
+                      ),
                     ),
                   ),
               ],

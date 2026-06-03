@@ -34,6 +34,49 @@ class _HomePageState extends State<HomePage> {
   int _severityChartReloadKey = 0;
   OrchardSnapshot? _lastSnapshot;
 
+  void _showNotification(String message, {bool isDelete = false}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isDelete ? Icons.delete_outline : Icons.check_circle,
+              color: isDelete ? Colors.red : const Color(0xFF4CAF50),
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 200,
+          left: 20,
+          right: 20,
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +94,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     SyncService.instance.lastSyncNotifier.removeListener(_onSyncUpdated);
-    SyncService.instance.progressNotifier.removeListener(_onSyncProgressChanged);
+    SyncService.instance.progressNotifier.removeListener(
+      _onSyncProgressChanged,
+    );
     super.dispose();
   }
 
@@ -68,12 +113,7 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
 
     if (imported > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$imported new scan(s) synced from Pi.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showNotification('$imported new scan(s) synced from Pi.');
     }
 
     await _refresh();
@@ -279,7 +319,8 @@ class _HomePageState extends State<HomePage> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              if (snapshot.hasError && !snapshot.hasData &&
+              if (snapshot.hasError &&
+                  !snapshot.hasData &&
                   _lastSnapshot == null) {
                 return Center(
                   child: Column(
@@ -346,10 +387,10 @@ class _HomePageState extends State<HomePage> {
 
               final anthracnoseCount =
                   snapshotData.anthracnoseStageSummary['total'] ?? 0;
-        final anthracnoseStageSeries =
+              final anthracnoseStageSeries =
                   snapshotData.anthracnoseWeeklyStageSeries;
-        final anthracnosePerTreeImageSeries =
-          snapshotData.anthracnosePerTreeImageSeries;
+              final anthracnosePerTreeImageSeries =
+                  snapshotData.anthracnosePerTreeImageSeries;
               final anthracnoseTrendData = snapshotData.anthracnoseTrendSeries
                   .map((row) => ((row['count'] as int?) ?? 0).toDouble())
                   .toList(growable: false);
@@ -377,150 +418,103 @@ class _HomePageState extends State<HomePage> {
                       ),
                     Expanded(
                       child: RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: MediaQuery.of(context).padding.top + 16,
-                      bottom: 24,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        onRefresh: _refresh,
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: EdgeInsets.only(
+                            left: 16,
+                            right: 16,
+                            top: MediaQuery.of(context).padding.top + 16,
+                            bottom: 24,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Overview',
-                                style: TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.notifications_outlined,
-                                      color: Colors.black87,
-                                      size: 28,
-                                    ),
-                                    onPressed: () async {
-                                      await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const NotificationsPage(),
-                                        ),
-                                      );
-                                      _loadUnreadNotificationCount();
-                                    },
-                                  ),
-                                  if (_unreadNotificationCount > 0)
-                                    Positioned(
-                                      right: 6,
-                                      top: 6,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFC62828),
-                                          borderRadius: BorderRadius.circular(
-                                            99,
-                                          ),
-                                        ),
-                                        constraints: const BoxConstraints(
-                                          minWidth: 18,
-                                          minHeight: 18,
-                                        ),
-                                        child: Text(
-                                          _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Overview',
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        if (_trees.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 8,
-                              right: 8,
-                              top: 8,
-                            ),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  FilterChip(
-                                    label: const Text('All Trees'),
-                                    selected: _selectedTreeId == null,
-                                    showCheckmark: false,
-                                    selectedColor: const Color(0xFF2E7D32),
-                                    backgroundColor: const Color(0xFFEAF5EA),
-                                    labelStyle: TextStyle(
-                                      color: _selectedTreeId == null
-                                          ? Colors.white
-                                          : const Color(0xFF2E7D32),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    side: const BorderSide(
-                                      color: Color(0xFF2E7D32),
-                                    ),
-                                    onSelected: (selected) {
-                                      if (!selected ||
-                                          _selectedTreeId == null) {
-                                        return;
-                                      }
-                                      _onTreeChipSelected(null);
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ...(() {
-                                    final sortedTrees =
-                                        List<Map<String, dynamic>>.from(_trees)
-                                          ..sort(
-                                            (a, b) => _treeNameFromMap(a)
-                                                .toLowerCase()
-                                                .compareTo(
-                                                  _treeNameFromMap(
-                                                    b,
-                                                  ).toLowerCase(),
-                                                ),
-                                          );
-
-                                    return sortedTrees.map((tree) {
-                                      final treeId = _treeIdFromMap(tree);
-                                      final treeName = _treeNameFromMap(tree);
-                                      if (treeId == null || treeName.isEmpty) {
-                                        return null;
-                                      }
-
-                                      final isSelected =
-                                          _selectedTreeId == treeId;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.notifications_outlined,
+                                            color: Colors.black87,
+                                            size: 28,
+                                          ),
+                                          onPressed: () async {
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    const NotificationsPage(),
+                                              ),
+                                            );
+                                            _loadUnreadNotificationCount();
+                                          },
                                         ),
-                                        child: FilterChip(
-                                          label: Text(treeName),
-                                          selected: isSelected,
+                                        if (_unreadNotificationCount > 0)
+                                          Positioned(
+                                            right: 6,
+                                            top: 6,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFC62828),
+                                                borderRadius:
+                                                    BorderRadius.circular(99),
+                                              ),
+                                              constraints: const BoxConstraints(
+                                                minWidth: 18,
+                                                minHeight: 18,
+                                              ),
+                                              child: Text(
+                                                _unreadNotificationCount > 9
+                                                    ? '9+'
+                                                    : '$_unreadNotificationCount',
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              if (_trees.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 8,
+                                    right: 8,
+                                    top: 8,
+                                  ),
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        FilterChip(
+                                          label: const Text('All Trees'),
+                                          selected: _selectedTreeId == null,
                                           showCheckmark: false,
                                           selectedColor: const Color(
                                             0xFF2E7D32,
@@ -529,7 +523,7 @@ class _HomePageState extends State<HomePage> {
                                             0xFFEAF5EA,
                                           ),
                                           labelStyle: TextStyle(
-                                            color: isSelected
+                                            color: _selectedTreeId == null
                                                 ? Colors.white
                                                 : const Color(0xFF2E7D32),
                                             fontWeight: FontWeight.w600,
@@ -538,133 +532,195 @@ class _HomePageState extends State<HomePage> {
                                             color: Color(0xFF2E7D32),
                                           ),
                                           onSelected: (selected) {
-                                            final newValue = selected
-                                                ? treeId
-                                                : null;
-                                            _onTreeChipSelected(newValue);
+                                            if (!selected ||
+                                                _selectedTreeId == null) {
+                                              return;
+                                            }
+                                            _onTreeChipSelected(null);
                                           },
                                         ),
-                                      );
-                                    }).whereType<Widget>();
-                                  })(),
-                                ],
+                                        const SizedBox(width: 8),
+                                        ...(() {
+                                          final sortedTrees =
+                                              List<Map<String, dynamic>>.from(
+                                                _trees,
+                                              )..sort(
+                                                (a, b) => _treeNameFromMap(a)
+                                                    .toLowerCase()
+                                                    .compareTo(
+                                                      _treeNameFromMap(
+                                                        b,
+                                                      ).toLowerCase(),
+                                                    ),
+                                              );
+
+                                          return sortedTrees.map((tree) {
+                                            final treeId = _treeIdFromMap(tree);
+                                            final treeName = _treeNameFromMap(
+                                              tree,
+                                            );
+                                            if (treeId == null ||
+                                                treeName.isEmpty) {
+                                              return null;
+                                            }
+
+                                            final isSelected =
+                                                _selectedTreeId == treeId;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 8,
+                                              ),
+                                              child: FilterChip(
+                                                label: Text(treeName),
+                                                selected: isSelected,
+                                                showCheckmark: false,
+                                                selectedColor: const Color(
+                                                  0xFF2E7D32,
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFFEAF5EA,
+                                                ),
+                                                labelStyle: TextStyle(
+                                                  color: isSelected
+                                                      ? Colors.white
+                                                      : const Color(0xFF2E7D32),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                side: const BorderSide(
+                                                  color: Color(0xFF2E7D32),
+                                                ),
+                                                onSelected: (selected) {
+                                                  final newValue = selected
+                                                      ? treeId
+                                                      : null;
+                                                  _onTreeChipSelected(newValue);
+                                                },
+                                              ),
+                                            );
+                                          }).whereType<Widget>();
+                                        })(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 8,
+                                  right: 8,
+                                ),
+                                child: Text(
+                                  'Last scan: ${_formatLatestScanDate(snapshotData.latestScanDate)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black54,
+                                  ),
+                                ),
                               ),
-                            ),
+
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 8,
+                                  right: 8,
+                                  top: 2,
+                                ),
+                                child: Text(
+                                  'Rows with missing key fields: ${snapshotData.rowCompleteness['incomplete'] ?? 0}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black45,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              DiseaseDistributionCard(
+                                diseases: diseases,
+                                totalCases: distributionTotal,
+                              ),
+
+                              const SizedBox(height: 30),
+
+                              const DiseaseSeasonalCard(),
+
+                              const SizedBox(height: 30),
+
+                              PrimaryThreatCard(
+                                diseaseName: 'Anthracnose',
+                                scientificName: 'C. gloeosporioides',
+                                activeCases: anthracnoseCount,
+                                threatLevel: anthracnoseThreatLevel,
+                                weeklyTrendDelta: weeklyTrendDelta,
+                                trendData: anthracnoseTrendData,
+                                stageSeries: anthracnoseStageSeries,
+                                perTreeImageSeries:
+                                    anthracnosePerTreeImageSeries,
+                                treeId: _selectedTreeId,
+                                refreshKey: _severityChartReloadKey,
+                              ),
+
+                              const SizedBox(height: 30),
+
+                              const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Text(
+                                  'Severity Distributions',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF555555),
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              SeverityDistributionsCard(summary: summaryData),
+
+                              const SizedBox(height: 30),
+
+                              FutureBuilder<WeatherData?>(
+                                future: _weatherFuture,
+                                builder: (context, weatherSnapshot) {
+                                  return AnthracnoseRiskForecastCard(
+                                    treeId: _selectedTreeId,
+                                    weather: weatherSnapshot.data,
+                                    stageSeries: anthracnoseStageSeries,
+                                  );
+                                },
+                              ),
+
+                              const SizedBox(height: 30),
+
+                              const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Text(
+                                  'Recommended Actions',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF555555),
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              RecommendedActionsCard(
+                                summary: summaryData,
+                                primaryDisease: snapshotData.primaryDisease,
+                                trendDirection: trendDirection,
+                              ),
+
+                              const SizedBox(height: 24),
+                            ],
                           ),
-
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8, right: 8),
-                          child: Text(
-                            'Last scan: ${_formatLatestScanDate(snapshotData.latestScanDate)}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.black54,
-                            ),
-                          ),
                         ),
-
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 8,
-                            right: 8,
-                            top: 2,
-                          ),
-                          child: Text(
-                            'Rows with missing key fields: ${snapshotData.rowCompleteness['incomplete'] ?? 0}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black45,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        DiseaseDistributionCard(
-                          diseases: diseases,
-                          totalCases: distributionTotal,
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        const DiseaseSeasonalCard(),
-
-                        const SizedBox(height: 30),
-
-                        PrimaryThreatCard(
-                          diseaseName: 'Anthracnose',
-                          scientificName: 'C. gloeosporioides',
-                          activeCases: anthracnoseCount,
-                          threatLevel: anthracnoseThreatLevel,
-                          weeklyTrendDelta: weeklyTrendDelta,
-                          trendData: anthracnoseTrendData,
-                          stageSeries: anthracnoseStageSeries,
-                          perTreeImageSeries: anthracnosePerTreeImageSeries,
-                          treeId: _selectedTreeId,
-                          refreshKey: _severityChartReloadKey,
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: Text(
-                            'Severity Distributions',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF555555),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        SeverityDistributionsCard(summary: summaryData),
-
-                        const SizedBox(height: 30),
-
-                        FutureBuilder<WeatherData?>(
-                          future: _weatherFuture,
-                          builder: (context, weatherSnapshot) {
-                            return AnthracnoseRiskForecastCard(
-                              treeId: _selectedTreeId,
-                              weather: weatherSnapshot.data,
-                              stageSeries: anthracnoseStageSeries,
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: Text(
-                            'Recommended Actions',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF555555),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        RecommendedActionsCard(
-                          summary: summaryData,
-                          primaryDisease: snapshotData.primaryDisease,
-                          trendDirection: trendDirection,
-                        ),
-
-                        const SizedBox(height: 24),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              ],
-            ),
               );
             },
           );
@@ -673,4 +729,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-
