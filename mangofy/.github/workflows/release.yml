@@ -1,0 +1,110 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build-target: apk
+          - os: macos-latest
+            build-target: ios
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.9.2'
+          channel: 'stable'
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK (Android)
+        if: matrix.build-target == 'apk'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          flutter build apk --release --no-tree-shake-icons
+          mkdir -p build/artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk build/artifacts/mangofy-release.apk
+
+      - name: Build IPA (iOS)
+        if: matrix.build-target == 'ios'
+        run: |
+          flutter build ios --release
+          mkdir -p build/artifacts
+          # Create IPA from iOS build output
+          cd build/ios/Release-iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r ../../artifacts/mangofy-release.ipa Payload/
+
+      - name: Upload APK artifact
+        if: matrix.build-target == 'apk'
+        uses: actions/upload-artifact@v3
+        with:
+          name: apk
+          path: build/artifacts/mangofy-release.apk
+
+      - name: Upload IPA artifact
+        if: matrix.build-target == 'ios'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ipa
+          path: build/artifacts/mangofy-release.ipa
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download APK
+        uses: actions/download-artifact@v3
+        with:
+          name: apk
+          path: artifacts
+
+      - name: Download IPA
+        uses: actions/download-artifact@v3
+        with:
+          name: ipa
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+          body: |
+            Release ${{ github.ref_name }}
+            
+            **Changes in this release:**
+            - APK: mangofy-release.apk (Android)
+            - IPA: mangofy-release.ipa (iOS)
+            
+            **Installation Instructions:**
+            
+            **Android:**
+            1. Download mangofy-release.apk
+            2. Transfer to your Android phone
+            3. Open file manager, tap the APK file
+            4. Follow prompts to install
+            
+            **iOS:**
+            1. Download mangofy-release.ipa
+            2. Use Xcode or Apple Configurator 2 to install on registered device
+            3. Or send link to testers via TestFlight (requires App Store submission)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
